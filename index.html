@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Unidad S.W.A.T - Registro diario de refinacion</title>
+  <link rel="icon" type="image/png" href="logo.png">
+  <link rel="apple-touch-icon" href="logo.png">
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+
+  <div class="pantalla-carga" id="pantallaCarga">
+    <div class="carga-contenido">
+      <div class="carga-logo">
+        <img src="logo.png" alt="S.W.A.T" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <div class="logo-respaldo" style="display:none;">S.W.A.T</div>
+      </div>
+      <div class="carga-titulo">Unidad S.W.A.T</div>
+      <div class="carga-subtitulo">Special Weapons and Tactics</div>
+      <div class="carga-barra"><div class="carga-progreso" id="cargaProgreso"></div></div>
+      <div class="carga-texto" id="cargaTexto">Iniciando sistema...</div>
+    </div>
+  </div>
+
+  <div class="pantalla-login" id="pantallaLogin">
+    <div class="login-fondo"></div>
+    <div class="login-ventana">
+      <div class="login-logo">
+        <img src="logo.png" alt="S.W.A.T" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+        <div class="logo-respaldo" style="display:none;">S.W.A.T</div>
+      </div>
+      <div class="login-titulo">Unidad S.W.A.T</div>
+      <div class="login-subtitulo">Sistema de logística</div>
+      <div class="login-campo">
+        <label for="tokenAcceso">Token de seguridad</label>
+        <input type="password" id="tokenAcceso" placeholder="Ingresa el token" autocomplete="off">
+      </div>
+      <button class="boton boton-primario login-boton" id="botonAcceder">Acceder</button>
+      <div class="login-error" id="loginError"></div>
+    </div>
+  </div>
+
+  <div class="contenedor-encabezado" id="contenidoPrincipal" style="display:none;">
+    <header class="encabezado-clan">
+      <div class="contenedor-logo">
+        <div class="logo-clan">
+          <img src="logo.png" alt="Emblema Unidad S.W.A.T"
+               onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+          <div class="logo-respaldo" style="display:none;">S.W.A.T</div>
+        </div>
+      </div>
+      <div class="titulo-clan">Unidad S.W.A.T</div>
+      <div class="subtitulo-clan">
+        <span class="led-activo"></span>
+        Special Weapons and Tactics
+        <span class="led-activo"></span>
+      </div>
+    </header>
+
+    <div class="barra-titulo">
+      <span class="texto-titulo">Registro refinacion</span>
+    </div>
+  </div>
+
+  <div class="barra-conexion" id="barraConexion" style="display:none;">
+    <div class="indicador-conexion">
+      <span class="punto"></span>
+      <span id="estadoConexion">Iniciando...</span>
+    </div>
+    <div class="detalles-conexion" id="detallesConexion">Sin cargar datos</div>
+    <div class="acciones-conexion">
+      <button class="boton boton-pequeno" id="botonCargarDb">Cargar DB</button>
+      <button class="boton boton-pequeno" id="botonCerrarSesion">Cerrar sesión</button>
+    </div>
+  </div>
+
+  <div class="pestanas" id="pestanasPrincipales" style="display:none;">
+    <button class="boton-pestana activa" data-vista="vista-dia">Reportar</button>
+    <button class="boton-pestana" data-vista="vista-historial">Reportes</button>
+    <button class="boton-pestana" data-vista="vista-miembros">Miembros</button>
+    <button class="boton-pestana" data-vista="vista-resumen">Resumen</button>
+  </div>
+
+  <div class="contenedor" id="contenedorPrincipal" style="display:none;">
+
+    <div class="vista activa" id="vista-dia">
+
+      <div class="tarjeta">
+        <h2>Dia</h2>
+        <div class="selector-dia">
+          <span class="fecha-hoy-display">
+            <span class="etiqueta-fecha">Fecha:</span>
+            <span id="textoFechaHoy">—</span>
+          </span>
+          <span class="info-dia" id="infoDia"></span>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Parametros</h2>
+        <div class="cuadricula-2">
+          <div class="grupo-campo">
+            <label for="depositoCrudo">Deposito de crudo (L)</label>
+            <input type="number" id="depositoCrudo" min="0" step="0.1" value="0">
+          </div>
+          <div class="grupo-campo">
+            <label for="produccionEstimada">Produccion estimada (L)</label>
+            <input type="number" id="produccionEstimada" min="0" step="0.1" value="0">
+          </div>
+        </div>
+        <div class="caja-rendimiento">
+          <div class="item-rendimiento">
+            <span class="etiqueta">Rendimiento:</span>
+            <span class="valor" id="visualRendimiento">0.00%</span>
+          </div>
+          <div class="item-rendimiento">
+            <span class="etiqueta">Perdida:</span>
+            <span class="valor perdida" id="visualPerdida">0.00%</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Porcentajes</h2>
+        <div class="cuadricula-2">
+          <div class="grupo-campo">
+            <label for="porcentajeRecolector">Recolector (%)</label>
+            <input type="number" id="porcentajeRecolector" min="0" max="100" step="1" value="0">
+          </div>
+          <div class="grupo-campo">
+            <label for="porcentajeCamionero">Camionero (%)</label>
+            <input type="number" id="porcentajeCamionero" min="0" max="100" step="1" value="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Estado del deposito y base</h2>
+        <div class="cuadricula-3">
+          <div class="grupo-campo">
+            <label for="estadoDeposito">Deposito actual (L)</label>
+            <input type="number" id="estadoDeposito" min="0" step="0.1" value="0">
+          </div>
+          <div class="grupo-campo">
+            <label for="estadoRefinado">Gasolina refinada (L)</label>
+            <input type="number" id="estadoRefinado" min="0" step="0.1" value="0">
+          </div>
+          <div class="grupo-campo">
+            <label for="estadoBase">Gasolina en base (L)</label>
+            <input type="number" id="estadoBase" min="0" step="0.1" value="0">
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta tarjeta-sin-relleno">
+        <div class="encabezado-tarjeta-interno">
+          <div class="panel-entregas">
+            <div class="item-panel-entregas">
+              <span class="etiqueta">Pendiente del dia:</span>
+              <span class="valor" id="pendienteDia">0 L</span>
+            </div>
+            <div class="item-panel-entregas">
+              <span class="etiqueta">Entregado del dia:</span>
+              <span class="valor entregado" id="entregadoDia">0 L</span>
+            </div>
+            <div class="item-panel-entregas">
+              <span class="etiqueta">Filas:</span>
+              <span class="valor" id="contadorFilas">0</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="contenedor-tabla">
+          <table id="tablaRegistros">
+            <thead>
+              <tr>
+                <th class="col-hora">Hora</th>
+                <th class="col-nombre">Nombre</th>
+                <th class="col-rango">Rango</th>
+                <th class="col-bruto">Bruto (L)</th>
+                <th class="col-neto">Neto (L)</th>
+                <th class="col-porcentaje">% Rango</th>
+                <th class="col-recompensa">Recompensa (L)</th>
+                <th class="col-entregado">Entregado</th>
+                <th class="col-accion">X</th>
+              </tr>
+            </thead>
+            <tbody id="cuerpoTabla"></tbody>
+            <tfoot>
+              <tr class="fila-totales">
+                <td colspan="3" class="celda-titulo-totales">Totales del dia</td>
+                <td class="celda-calculada" id="totalCrudo">0</td>
+                <td class="celda-calculada" id="totalNeto">0</td>
+                <td></td>
+                <td class="celda-calculada" id="totalGasolina">0</td>
+                <td colspan="2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <div class="acciones-tabla">
+          <button class="boton boton-primario" id="botonAgregarFila">Agregar fila</button>
+          <button class="boton" id="botonMarcarTodo">Marcar todo entregado</button>
+          <button class="boton" id="botonEnviarReporte">Reportar dia</button>
+          <button class="boton boton-peligro" id="botonLimpiar">Limpiar</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="vista" id="vista-historial">
+
+      <div class="tarjeta">
+        <h2>Filtros</h2>
+        <div class="cuadricula-4">
+          <div class="grupo-campo">
+            <label for="filtroDesde">Desde</label>
+            <input type="date" id="filtroDesde">
+          </div>
+          <div class="grupo-campo">
+            <label for="filtroHasta">Hasta</label>
+            <input type="date" id="filtroHasta">
+          </div>
+          <div class="grupo-campo">
+            <label for="filtroMiembro">Miembro</label>
+            <select id="filtroMiembro">
+              <option value="">Todos</option>
+            </select>
+          </div>
+          <div class="grupo-campo">
+            <label for="filtroEstado">Estado</label>
+            <select id="filtroEstado">
+              <option value="">Todos</option>
+              <option value="pendiente">Pendiente</option>
+              <option value="entregado">Entregado</option>
+            </select>
+          </div>
+        </div>
+        <div class="fila-acciones margen-superior">
+          <button class="boton boton-primario" id="botonFiltrar">Filtrar</button>
+          <button class="boton" id="botonExportarFiltrado">Exportar CSV filtrado</button>
+          <button class="boton" id="botonLimpiarFiltros">Limpiar filtros</button>
+        </div>
+      </div>
+
+      <div class="barra-pendientes" id="barraPendientes">
+        <span class="info" id="infoPendientes">Hay cambios pendientes sin guardar</span>
+        <div class="fila-acciones">
+          <button class="boton boton-primario" id="botonActualizarDia">Actualizar dia</button>
+          <button class="boton" id="botonDescartarCambios">Descartar cambios</button>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Totales</h2>
+        <div class="cuadricula-stats">
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Bruto total</div>
+            <div class="valor-stat bruto" id="statCrudoBruto">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Neto refinado</div>
+            <div class="valor-stat neto" id="statNetoTotal">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Recompensa pendiente</div>
+            <div class="valor-stat" id="statGasolinaTotal">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Beneficio</div>
+            <div class="valor-stat beneficio" id="statPendiente">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Entregado</div>
+            <div class="valor-stat entregado" id="statEntregado">0 L</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta tarjeta-sin-relleno">
+        <div class="encabezado-tarjeta-interno">
+          <h2 class="titulo-sin-borde">Recolecciones</h2>
+        </div>
+        <div class="contenedor-tabla">
+          <table id="tablaHistorial">
+            <thead>
+              <tr>
+                <th class="col-fecha">Fecha</th>
+                <th class="col-hora">Hora</th>
+                <th class="col-nombre">Nombre</th>
+                <th class="col-rango">Rango</th>
+                <th class="col-bruto">Bruto (L)</th>
+                <th class="col-neto">Neto (L)</th>
+                <th class="col-porcentaje">% Rango</th>
+                <th class="col-recompensa">Recompensa (L)</th>
+                <th class="col-entregado">Entregado</th>
+                <th class="col-fecha-pago">Fecha pago</th>
+                <th class="col-acciones">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="cuerpoHistorial"></tbody>
+          </table>
+        </div>
+        <div id="historialVacio" class="mensaje-vacio" style="display:none;">
+          NO HAY DATOS
+        </div>
+      </div>
+    </div>
+
+    <div class="vista" id="vista-miembros">
+      <div class="tarjeta">
+        <h2>Lista de miembros</h2>
+        <div class="fila-espacio-entre">
+          <div class="contador-miembros" id="contadorMiembros">Total de miembros: 0</div>
+        </div>
+
+        <div class="barra-miembros" id="barraMiembros">
+          <span class="info" id="infoMiembros">Hay cambios pendientes en la lista de miembros</span>
+          <div class="fila-acciones">
+            <button class="boton boton-primario" id="botonGuardarMiembros">Guardar lista de miembros</button>
+            <button class="boton" id="botonDescartarMiembros">Descartar cambios</button>
+          </div>
+        </div>
+
+        <div class="cuadricula-2 margen-inferior">
+          <div class="grupo-campo">
+            <label for="nuevoMiembro">Nuevo miembro</label>
+            <input type="text" id="nuevoMiembro" placeholder="Nombre del miembro">
+          </div>
+          <div class="grupo-campo">
+            <label for="nuevoMiembroRango">Rango</label>
+            <select id="nuevoMiembroRango">
+              <option value="Recolector">Recolector</option>
+              <option value="Camionero">Camionero</option>
+            </select>
+          </div>
+        </div>
+        <button class="boton boton-primario" id="botonAgregarMiembro">Agregar miembro</button>
+
+        <div class="contenedor-tabla margen-superior-grande">
+          <table class="tabla-miembros">
+            <thead>
+              <tr>
+                <th>Nombre</th>
+                <th>Rango</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="cuerpoMiembros"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="vista" id="vista-resumen">
+
+      <div class="tarjeta">
+        <h2>Resumen general del clan</h2>
+        <div class="cuadricula-stats">
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Dias con registros</div>
+            <div class="valor-stat pequeno" id="resumenDias">0</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Bruto total</div>
+            <div class="valor-stat bruto" id="resumenCrudo">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Neto total</div>
+            <div class="valor-stat neto" id="resumenNeto">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Entregado total</div>
+            <div class="valor-stat entregado" id="resumenEntregado">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Recompensa pendiente</div>
+            <div class="valor-stat" id="resumenGasolina">0 L</div>
+          </div>
+          <div class="tarjeta-stat">
+            <div class="etiqueta-stat">Aporte al clan (beneficio)</div>
+            <div class="valor-stat beneficio" id="resumenBeneficio">0 L</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Estadisticas visuales</h2>
+
+        <div class="contenedor-grafica">
+          <h3>Top miembros: bruto vs neto</h3>
+          <canvas id="graficaRecolectores"></canvas>
+        </div>
+
+        <div class="contenedor-grafica">
+          <h3>Top miembros: bruto, neto y recompensa</h3>
+          <canvas id="graficaGasolina"></canvas>
+        </div>
+
+        <div class="contenedor-grafica">
+          <h3>Pendiente vs Entregado por miembro</h3>
+          <canvas id="graficaPendiente"></canvas>
+        </div>
+
+        <div class="contenedor-grafica">
+          <h3>Top miembros: aporte al clan (beneficio)</h3>
+          <canvas id="graficaAporte"></canvas>
+        </div>
+
+        <div class="contenedor-grafica">
+          <h3>Evolucion diaria: bruto vs neto</h3>
+          <canvas id="graficaEvolucion"></canvas>
+        </div>
+
+        <div class="contenedor-grafica">
+          <h3>Evolucion diaria: aporte al clan</h3>
+          <canvas id="graficaEvolucionAporte"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="superposicion-modal" id="modalOverlay">
+    <div class="modal">
+      <div class="encabezado-modal">
+        <h2>Reporte del dia</h2>
+        <button class="cerrar-modal" id="botonCerrarModal">&times;</button>
+      </div>
+      <div class="cuerpo-modal">
+        <div class="grupo-webhook">
+          <label for="entradaWebhook">Webhook de Discord (opcional)</label>
+          <input type="text" id="entradaWebhook" placeholder="https://discord.com/api/webhooks/...">
+          <p class="sugerencia">Si esta configurado, el reporte tambien se publicara en el canal.</p>
+        </div>
+        <pre id="vistaPreviaReporte"></pre>
+      </div>
+      <div class="pie-modal">
+        <button class="boton" id="botonRefrescarReporte">Refrescar</button>
+        <button class="boton" id="botonCopiarReporte">Copiar</button>
+        <button class="boton" id="botonDescargarCsv">Descargar CSV</button>
+        <button class="boton" id="botonImportarCsv">Importar CSV</button>
+        <button class="boton boton-primario" id="botonEnviarDiscord">Enviar a Discord</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="superposicion-modal" id="modalConfirm">
+    <div class="modal modal-confirmacion">
+      <div class="encabezado-modal">
+        <h2 id="tituloConfirm">Confirmar</h2>
+        <button class="cerrar-modal" id="botonCerrarConfirm">&times;</button>
+      </div>
+      <div class="cuerpo-modal" id="cuerpoConfirm">
+        <p id="mensajeConfirm"></p>
+        <p class="sub" id="subConfirm"></p>
+        <input type="text" id="entradaConfirm" placeholder="" style="display:none;">
+      </div>
+      <div class="pie-modal">
+        <button class="boton" id="botonCancelarConfirm">Cancelar</button>
+        <button class="boton boton-primario" id="botonAceptarConfirm">Aceptar</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="entradaCsv" accept=".csv" style="display:none;">
+
+  <div class="notificacion" id="notificacion"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
