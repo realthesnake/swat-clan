@@ -400,7 +400,7 @@ function sincronizarFilasDesdeDom(fecha) {
     if (check) {
       fila.entregado = check.checked;
       if (check.checked) {
-        fila.fechaEntregado = fila.fechaEntregado || (fecha || fechaHoy());
+        fila.fechaEntregado = fila.fechaEntregado || fechaHoy();
       } else {
         fila.fechaEntregado = '';
       }
@@ -1339,14 +1339,13 @@ function actualizarHistorial() {
         if (valorNuevo === valorAnterior) {
           if (idx >= 0) cambiosPendientes.splice(idx, 1);
         } else {
-          const fechaFila = fila.fecha || fechaHoy();
           if (idx >= 0) {
             cambiosPendientes[idx].valorNuevo = valorNuevo;
-            cambiosPendientes[idx].fechaEntregadoNuevo = valorNuevo ? fechaFila : '';
+            cambiosPendientes[idx].fechaEntregadoNuevo = valorNuevo ? fechaHoy() : '';
           } else {
             cambiosPendientes.push({
               id, tipo: 'check', valorAnterior, valorNuevo,
-              fechaEntregadoNuevo: valorNuevo ? fechaFila : ''
+              fechaEntregadoNuevo: valorNuevo ? fechaHoy() : ''
             });
           }
         }
@@ -1406,7 +1405,7 @@ function aplicarCambiosPendientes() {
           const fila = datos.filas.find((f) => f.id === c.id);
           if (fila) {
             fila.entregado = c.valorNuevo;
-            fila.fechaEntregado = c.valorNuevo ? (c.fechaEntregadoNuevo || fila.fecha || fechaHoy()) : '';
+            fila.fechaEntregado = c.valorNuevo ? (c.fechaEntregadoNuevo || fechaHoy()) : '';
             marcarFilaPendiente(fila.id);
             fechasFilasPendientes.add(fila.fecha);
           }
@@ -1846,9 +1845,15 @@ function generarReporteTexto() {
   texto += 'DETALLE POR MIEMBRO:\n';
   texto += '----------------------------------------\n';
 
-  const nombresOrdenados = Object.keys(desglose).sort((a, b) => a.localeCompare(b));
+  const nombresOrdenados = Object.keys(desglose)
+    .filter((nombre) => {
+      const d = desglose[nombre];
+      return d.gasEntregadaHoy > 0 || d.pendienteTotal > 0;
+    })
+    .sort((a, b) => a.localeCompare(b));
+
   if (nombresOrdenados.length === 0) {
-    texto += '   (Sin recolecciones registradas)\n';
+    texto += '   (Sin novedades para reportar)\n';
   } else {
     nombresOrdenados.forEach((nombre) => {
       const d = desglose[nombre];
@@ -1871,7 +1876,13 @@ function generarEmbedDiscord(nombreReportante) {
   const estado = obtenerEstadoDia(fecha);
   const lineas = [];
 
-  const nombresOrdenados = Object.keys(desglose).sort((a, b) => a.localeCompare(b));
+  const nombresOrdenados = Object.keys(desglose)
+    .filter((nombre) => {
+      const d = desglose[nombre];
+      return d.gasEntregadaHoy > 0 || d.pendienteTotal > 0;
+    })
+    .sort((a, b) => a.localeCompare(b));
+
   nombresOrdenados.forEach((nombre) => {
     const d = desglose[nombre];
     let linea = '**' + nombre + '** [' + d.rango + ']\n';
@@ -1880,7 +1891,7 @@ function generarEmbedDiscord(nombreReportante) {
     lineas.push(linea);
   });
 
-  const detalle = lineas.length > 0 ? lineas.join('\n\n') : 'Sin recolecciones registradas.';
+  const detalle = lineas.length > 0 ? lineas.join('\n\n') : 'Sin novedades para reportar.';
 
   const embed = {
     title: 'Registro refinación · ' + fecha,
@@ -1951,8 +1962,19 @@ function descargarCsv() {
   const e = obtenerEstadoDia(fecha);
   const rendimiento = calcularRendimientoDeDia(fecha);
   const perdida = (p && p.deposito > 0) ? 100 - rendimiento : 0;
+
+  const desglose = calcularDesglosePorMiembro(fecha);
+  const nombresConNovedad = new Set();
+  Object.keys(desglose).forEach((nombre) => {
+    const d = desglose[nombre];
+    if (d.gasEntregadaHoy > 0 || d.pendienteTotal > 0) nombresConNovedad.add(nombre);
+  });
+
   let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Entregado;Fecha pago\n';
-  const filasDia = filasDelDia(fecha).sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+  const filasDia = filasDelDia(fecha)
+    .filter((f) => nombresConNovedad.has(f.nombre))
+    .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+
   filasDia.forEach((f) => {
     const bruto = numero(f.bruto);
     const neto = netoFila(f);
@@ -1963,6 +1985,7 @@ function descargarCsv() {
            formatearNumero(porc) + ';' + formatearNumero(gas) + ';' +
            (f.entregado ? 'Si' : 'No') + ';' + (f.fechaEntregado || '') + '\n';
   });
+
   csv += 'TOTALES;;;;;' + totalCrudo.textContent + ';' + totalNeto.textContent + ';;' + totalGasolina.textContent + ';;\n';
   csv += '\nParametros;Deposito (L);' + formatearNumero(p ? p.deposito : 0) + '\n';
   csv += 'Parametros;Produccion estimada (L);' + formatearNumero(p ? p.produccion : 0) + '\n';
