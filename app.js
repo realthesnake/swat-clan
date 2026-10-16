@@ -1009,7 +1009,7 @@ function renderDiaActual() {
   if (filasDia.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
-    td.colSpan = 9;
+    td.colSpan = 10;
     td.className = 'mensaje-vacio';
     td.textContent = 'NO SE HA AÑADIDO DATOS';
     tr.appendChild(td);
@@ -1047,9 +1047,15 @@ function recalcularTodo() {
     const netoCelda = tr.querySelector('.neto-celda');
     const porcCelda = tr.querySelector('.porcentaje-celda');
     const gasCelda = tr.querySelector('.gasolina-celda');
+    const pendCelda = tr.querySelector('.pendiente-celda');
     if (netoCelda) netoCelda.textContent = formatearNumero(neto);
     if (porcCelda) porcCelda.textContent = formatearNumero(porc) + '%';
     if (gasCelda) gasCelda.textContent = formatearNumero(gas);
+    if (pendCelda) {
+      pendCelda.textContent = formatearNumero(pendiente);
+      pendCelda.classList.toggle('completa', pendiente <= 0);
+      pendCelda.classList.toggle('pendiente', pendiente > 0);
+    }
 
     sumaBruto += bruto; sumaNeto += neto; sumaGas += gas;
     pend += pendiente;
@@ -1145,6 +1151,11 @@ function crearFilaDom(fila, fecha) {
   tdGas.textContent = '0';
   tr.appendChild(tdGas);
 
+  const tdPendiente = document.createElement('td');
+  tdPendiente.className = 'celda-pendiente-dia pendiente-celda';
+  tdPendiente.textContent = '0';
+  tr.appendChild(tdPendiente);
+
   const tdPago = document.createElement('td');
   tdPago.className = 'celda-pagar';
   const inputPago = document.createElement('input');
@@ -1181,7 +1192,6 @@ function crearFilaDom(fila, fecha) {
     } else {
       setPagoHoyPendiente(fila, v);
     }
-    marcarFilaPendiente(fila.id);
     const p2 = pagosPendientes[String(fila.id)];
     tr.classList.toggle('fila-pendiente', !!(p2 && p2.litros > 0));
     recalcularTodo();
@@ -1290,40 +1300,34 @@ function limpiarFormulario() {
   mostrarConfirmacion({
     titulo: 'Limpiar formulario',
     mensaje: '¿Limpiar TODO el formulario del dia actual?',
-    sub: 'Se borraran las filas, parametros, porcentajes y el estado del deposito y base. El webhook se conserva.',
-    callback: async () => {
+    sub: 'Solo se borra en local. La DB no se modifica. El webhook se conserva.',
+    callback: () => {
       const fecha = fechaHoy();
       const filasDia = filasDelDia(fecha);
-      filasDia.forEach((f) => {
-        datos.filas = datos.filas.filter((x) => x.id !== f.id);
-        limpiarPendienteFila(f.id);
-        marcarFilaPendiente(f.id);
+      const idsDia = filasDia.map((f) => f.id);
+      idsDia.forEach((id) => {
+        datos.filas = datos.filas.filter((x) => x.id !== id);
+        limpiarPendienteFila(id);
       });
-      fechasFilasPendientes.add(fecha);
-      fechasEstadoPendientes.add(fecha);
+      cambiosPendientes = cambiosPendientes.filter((c) => !idsDia.includes(c.id));
       delete datos.parametrosPorDia[fecha];
       delete datos.estadoPorDia[fecha];
       delete datos.porcentajesPorDia[fecha];
       datos.porcentajes = { Recolector: 0, Camionero: 0 };
+
+      fechasFilasPendientes.delete(fecha);
+      fechasEstadoPendientes.delete(fecha);
+      estadoPendienteSheets = fechasEstadoPendientes.size > 0;
+
       guardarDatos();
       guardarPendientes();
       renderDiaActual();
+      actualizarHistorial();
+      actualizarResumen();
+      actualizarBarraPendientes();
+      actualizarBarraConexion();
 
-      try {
-        const resp = await enviarPeticion('borrar_estado_dia', { fecha: fecha });
-        if (resp.result === 'success') {
-          fechasEstadoPendientes.delete(fecha);
-          guardarPendientes();
-        }
-      } catch (e) {
-        console.warn('No se pudo borrar estado:', e);
-      }
-
-      estadoPendienteSheets = fechasEstadoPendientes.size > 0;
-      guardarPendientes();
-      sincronizarConDb(true);
-
-      mostrarNotificacion('Formulario limpiado completamente.', 'info');
+      mostrarNotificacion('Formulario limpiado solo en local. La DB no se tocó.', 'info');
     }
   });
 }
@@ -1447,7 +1451,6 @@ function actualizarHistorial() {
         } else {
           setPagoHoyPendiente(fila, v);
         }
-        marcarFilaPendiente(fila.id);
         const p2 = pagosPendientes[String(fila.id)];
         tr.classList.toggle('fila-pendiente', !!(p2 && p2.litros > 0));
         actualizarBarraPendientes();
@@ -1509,8 +1512,18 @@ function renderCeldaEntregasHistorial(d) {
 }
 
 function actualizarBarraPendientes() {
+  const vistaActiva = document.querySelector('.vista.activa');
+  const esVistaHistorial = vistaActiva && vistaActiva.id === 'vista-historial';
+  const esVistaMiembros = vistaActiva && vistaActiva.id === 'vista-miembros';
+
   const numPagos = Object.keys(pagosPendientes).filter((id) => pagosPendientes[id] && pagosPendientes[id].litros > 0).length;
   const numElim = cambiosPendientes.filter((c) => c.tipo === 'eliminar').length;
+
+  if (!esVistaHistorial && !esVistaMiembros) {
+    barraPendientes.classList.remove('activa');
+    return;
+  }
+
   const total = numPagos + numElim;
   if (total === 0) {
     barraPendientes.classList.remove('activa');
@@ -2387,7 +2400,22 @@ function ejecutarCambioVista(id) {
   document.querySelectorAll('.boton-pestana').forEach((b) => b.classList.remove('activa'));
   consultar(id).classList.add('activa');
   document.querySelector('.boton-pestana[data-vista="' + id + '"]').classList.add('activa');
-  if (id === 'vista-historial') setTimeout(() => actualizarHistorial(), 50);
+
+  if (id === 'vista-dia') {
+    barraConexion.style.display = 'none';
+  } else {
+    barraConexion.style.display = 'flex';
+  }
+
+  if (id === 'vista-historial') {
+    actualizarHistorial();
+    actualizarBarraPendientes();
+  } else if (id === 'vista-miembros') {
+    actualizarBarraPendientes();
+  } else {
+    barraPendientes.classList.remove('activa');
+  }
+
   if (id === 'vista-resumen') {
     setTimeout(() => actualizarResumen(), 50);
     setTimeout(() => actualizarResumen(), 300);
@@ -2407,7 +2435,7 @@ function ocultarLogin() {
 
 function mostrarContenido() {
   contenidoPrincipal.style.display = 'block';
-  barraConexion.style.display = 'flex';
+  barraConexion.style.display = 'none';
   pestanasPrincipales.style.display = 'flex';
   contenedorPrincipal.style.display = 'block';
 }
