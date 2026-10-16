@@ -64,18 +64,6 @@ const entradaWebhook = consultar('entradaWebhook');
 const entradaCsv = consultar('entradaCsv');
 const notificacion = consultar('notificacion');
 
-const modalPago = consultar('modalPago');
-const infoPagoMiembro = consultar('infoPagoMiembro');
-const pagoRecompensa = consultar('pagoRecompensa');
-const pagoYaEntregado = consultar('pagoYaEntregado');
-const pagoPendiente = consultar('pagoPendiente');
-const pagoCantidad = consultar('pagoCantidad');
-const pagoFecha = consultar('pagoFecha');
-const listaPagosExistentes = consultar('listaPagosExistentes');
-const botonCerrarPago = consultar('botonCerrarPago');
-const botonCancelarPago = consultar('botonCancelarPago');
-const botonConfirmarPago = consultar('botonConfirmarPago');
-
 const estadoConexion = consultar('estadoConexion');
 const detallesConexion = consultar('detallesConexion');
 
@@ -114,9 +102,6 @@ let confirmCallback = null;
 let filtrosAplicados = { desde: '', hasta: '', miembro: '', estado: '' };
 let cargando = false;
 let tokenValido = false;
-
-let pagoFilaActualId = null;
-let pagosPendientesPago = [];
 
 const botonesModal = ['botonRefrescarReporte', 'botonCopiarReporte', 'botonDescargarCsv', 'botonImportarCsv', 'botonEnviarDiscord', 'botonCerrarModal'];
 
@@ -250,12 +235,6 @@ function totalPagadoHoyFila(fila, fecha) {
   if (!fila.pagos || fila.pagos.length === 0) return 0;
   const fNorm = normalizarFecha(fecha);
   return fila.pagos.filter((p) => p.f === fNorm).reduce((s, p) => s + numero(p.l), 0);
-}
-
-function pendienteFila(fila) {
-  const recompensa = gasolinaFila(fila);
-  const pagado = totalPagadoFila(fila);
-  return Math.max(0, recompensa - pagado);
 }
 
 function estadoPagoFila(fila) {
@@ -1050,18 +1029,42 @@ function actualizarCeldaPago(celdaPago, fila) {
   const recompensa = gasolinaFila(fila);
   const pagado = totalPagadoFila(fila);
   const pendiente = Math.max(0, recompensa - pagado);
-  const estado = estadoPagoFila(fila);
 
-  celdaPago.className = 'celda-pago-dinamica celda-pagos ' + estado;
-  if (!fila.pagos || fila.pagos.length === 0) {
-    celdaPago.innerHTML = '<div class="pagos-resumen">Sin entregas</div>';
-  } else {
-    const lineas = fila.pagos.map((p) =>
-      '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
-    ).join('');
-    celdaPago.innerHTML = '<div class="pagos-resumen">' + lineas + '</div>' +
-      '<span class="celda-pendiente-fila' + (pendiente <= 0 ? ' completa' : '') + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>';
+  const infoPago = celdaPago.querySelector('.info-pago');
+  if (infoPago) {
+    infoPago.innerHTML = 'Pendiente: <span class="' + (pendiente <= 0 ? 'completa' : '') + '">' + formatearNumero(pendiente) + ' L</span>' +
+      ' · Pagado: ' + formatearNumero(pagado) + ' L';
   }
+}
+
+function registrarPagoFila(fila, cantidad, inputEl) {
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  const pendiente = Math.max(0, recompensa - pagado);
+
+  if (cantidad <= 0) {
+    if (inputEl) inputEl.value = '';
+    return false;
+  }
+  if (cantidad > pendiente) {
+    mostrarNotificacion('La cantidad excede el pendiente (' + formatearLitros(pendiente) + ').', 'error');
+    if (inputEl) inputEl.value = '';
+    return false;
+  }
+
+  const fechaPago = fechaHoy();
+  if (!fila.pagos) fila.pagos = [];
+  const idx = fila.pagos.findIndex((p) => p.f === fechaPago);
+  if (idx >= 0) {
+    fila.pagos[idx].l = numero(fila.pagos[idx].l) + cantidad;
+  } else {
+    fila.pagos.push({ f: fechaPago, l: cantidad });
+    fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
+  }
+
+  marcarFilaPendiente(fila.id);
+  if (inputEl) inputEl.value = '';
+  return true;
 }
 
 function crearFilaDom(fila, fecha) {
@@ -1143,10 +1146,17 @@ function crearFilaDom(fila, fecha) {
   tr.appendChild(tdGas);
 
   const tdPago = document.createElement('td');
-  tdPago.className = 'celda-pago-dinamica celda-pagos';
-  tdPago.addEventListener('click', () => abrirModalPago(fila.id));
-  tdPago.style.cursor = 'pointer';
-  tdPago.title = 'Clic para registrar entrega';
+  tdPago.className = 'celda-pago-dinamica celda-entregar-dia';
+  const inputPago = document.createElement('input');
+  inputPago.type = 'number';
+  inputPago.min = '0';
+  inputPago.step = '1';
+  inputPago.placeholder = 'Litros...';
+  inputPago.className = 'entrada-pago-fila';
+  const infoPago = document.createElement('span');
+  infoPago.className = 'info-pago';
+  tdPago.appendChild(inputPago);
+  tdPago.appendChild(infoPago);
   tr.appendChild(tdPago);
 
   const tdX = document.createElement('td');
@@ -1157,6 +1167,26 @@ function crearFilaDom(fila, fecha) {
   botonX.addEventListener('click', () => eliminarFila(fila.id));
   tdX.appendChild(botonX);
   tr.appendChild(tdX);
+
+  inputPago.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const cantidad = numero(inputPago.value);
+      if (registrarPagoFila(fila, cantidad, inputPago)) {
+        mostrarNotificacion('Entrega registrada: ' + formatearLitros(cantidad), 'exito');
+        recalcularTodo();
+      }
+    }
+  });
+  inputPago.addEventListener('blur', () => {
+    const cantidad = numero(inputPago.value);
+    if (cantidad > 0) {
+      if (registrarPagoFila(fila, cantidad, inputPago)) {
+        mostrarNotificacion('Entrega registrada: ' + formatearLitros(cantidad), 'exito');
+        recalcularTodo();
+      }
+    }
+  });
 
   inputBruto.addEventListener('input', () => {
     if (numero(inputBruto.value) < 0) { mostrarNotificacion('El campo "Bruto" no puede ser negativo.', 'error'); inputBruto.value = 0; }
@@ -1254,133 +1284,6 @@ function eliminarFila(id) {
   });
 }
 
-function abrirModalPago(filaId) {
-  const fila = datos.filas.find((f) => f.id === filaId);
-  if (!fila) return;
-  pagoFilaActualId = filaId;
-
-  const recompensa = gasolinaFila(fila);
-  const pagado = totalPagadoFila(fila);
-  const pendiente = Math.max(0, recompensa - pagado);
-
-  infoPagoMiembro.textContent = (fila.nombre || '(sin nombre)') + ' · ' + fila.fecha + ' ' + (fila.hora || '');
-  pagoRecompensa.textContent = formatearLitros(recompensa);
-  pagoYaEntregado.textContent = formatearLitros(pagado);
-  pagoPendiente.textContent = formatearLitros(pendiente);
-  pagoPendiente.className = 'valor-resumen' + (pendiente <= 0 ? ' completa' : ' pendiente');
-
-  pagoCantidad.value = pendiente > 0 ? pendiente : 0;
-  pagoCantidad.max = pendiente;
-  pagoFecha.value = fechaHoy();
-
-  renderPagosExistentes(fila);
-
-  modalPago.classList.add('activa');
-  setTimeout(() => pagoCantidad.focus(), 100);
-}
-
-function renderPagosExistentes(fila) {
-  if (!fila.pagos || fila.pagos.length === 0) {
-    listaPagosExistentes.innerHTML = '';
-    return;
-  }
-  listaPagosExistentes.innerHTML = fila.pagos.map((p) =>
-    '<div class="pago-item" data-fecha="' + escaparHtml(p.f) + '">' +
-      '<span class="fecha-pago">' + escaparHtml(p.f) + '</span>' +
-      '<span class="litros-pago">' + formatearNumero(p.l) + ' L</span>' +
-      '<button class="eliminar-pago" data-fecha="' + escaparHtml(p.f) + '" title="Eliminar pago">×</button>' +
-    '</div>'
-  ).join('');
-
-  listaPagosExistentes.querySelectorAll('.eliminar-pago').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const fecha = btn.dataset.fecha;
-      mostrarConfirmacion({
-        titulo: 'Eliminar entrega',
-        mensaje: '¿Eliminar la entrega del ' + fecha + '?',
-        callback: () => {
-          const fila = datos.filas.find((f) => f.id === pagoFilaActualId);
-          if (!fila) return;
-          fila.pagos = (fila.pagos || []).filter((p) => p.f !== fecha);
-          marcarFilaPendiente(fila.id);
-          recalcularTodo();
-          actualizarHistorial();
-          const recompensa = gasolinaFila(fila);
-          const pagado = totalPagadoFila(fila);
-          pagoYaEntregado.textContent = formatearLitros(pagado);
-          const pendiente = Math.max(0, recompensa - pagado);
-          pagoPendiente.textContent = formatearLitros(pendiente);
-          pagoPendiente.className = 'valor-resumen' + (pendiente <= 0 ? ' completa' : ' pendiente');
-          pagoCantidad.value = pendiente > 0 ? pendiente : 0;
-          renderPagosExistentes(fila);
-        }
-      });
-    });
-  });
-}
-
-function cerrarModalPago() {
-  modalPago.classList.remove('activa');
-  pagoFilaActualId = null;
-}
-
-function confirmarPago() {
-  if (!pagoFilaActualId) return;
-  const fila = datos.filas.find((f) => f.id === pagoFilaActualId);
-  if (!fila) return;
-
-  const cantidad = numero(pagoCantidad.value);
-  if (cantidad <= 0) {
-    mostrarNotificacion('La cantidad debe ser mayor a 0.', 'error');
-    return;
-  }
-  const fechaPago = normalizarFecha(pagoFecha.value) || fechaHoy();
-
-  const recompensa = gasolinaFila(fila);
-  const pagado = totalPagadoFila(fila);
-  const pendiente = Math.max(0, recompensa - pagado);
-  if (cantidad > pendiente) {
-    mostrarNotificacion('La cantidad excede el pendiente (' + formatearLitros(pendiente) + ').', 'error');
-    return;
-  }
-
-  if (!fila.pagos) fila.pagos = [];
-  const idx = fila.pagos.findIndex((p) => p.f === fechaPago);
-  if (idx >= 0) {
-    fila.pagos[idx].l = numero(fila.pagos[idx].l) + cantidad;
-  } else {
-    fila.pagos.push({ f: fechaPago, l: cantidad });
-    fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
-  }
-
-  marcarFilaPendiente(fila.id);
-  recalcularTodo();
-  actualizarHistorial();
-  actualizarResumen();
-
-  const nuevoPagado = totalPagadoFila(fila);
-  const nuevoPendiente = Math.max(0, recompensa - nuevoPagado);
-  pagoYaEntregado.textContent = formatearLitros(nuevoPagado);
-  pagoPendiente.textContent = formatearLitros(nuevoPendiente);
-  pagoPendiente.className = 'valor-resumen' + (nuevoPendiente <= 0 ? ' completa' : ' pendiente');
-  pagoCantidad.value = nuevoPendiente > 0 ? nuevoPendiente : 0;
-  renderPagosExistentes(fila);
-
-  mostrarNotificacion('Entrega registrada: ' + formatearLitros(cantidad), 'exito');
-
-  if (nuevoPendiente <= 0) {
-    setTimeout(() => cerrarModalPago(), 400);
-  }
-}
-
-botonCerrarPago.addEventListener('click', cerrarModalPago);
-botonCancelarPago.addEventListener('click', cerrarModalPago);
-botonConfirmarPago.addEventListener('click', confirmarPago);
-modalPago.addEventListener('click', (e) => { if (e.target === modalPago) cerrarModalPago(); });
-pagoCantidad.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') { e.preventDefault(); confirmarPago(); }
-});
-
 function limpiarFormulario() {
   mostrarConfirmacion({
     titulo: 'Limpiar formulario',
@@ -1431,13 +1334,31 @@ function aplicarFiltros() {
   mostrarNotificacion('Filtros aplicados.', 'info');
 }
 
-function obtenerHistorialFiltrado() {
+function obtenerHistorialFiltrado(usarCambiosPendientes = false) {
   const desde = filtrosAplicados.desde;
   const hasta = filtrosAplicados.hasta;
   const miembro = filtrosAplicados.miembro;
   const estado = filtrosAplicados.estado;
 
-  return datos.filas.filter((f) => {
+  let filasTrabajo = datos.filas.slice();
+  if (usarCambiosPendientes) {
+    cambiosPendientes.forEach((c) => {
+      if (c.tipo === 'pago') {
+        const fila = filasTrabajo.find((f) => f.id === c.id);
+        if (fila) {
+          if (!fila.pagos) fila.pagos = [];
+          const idx = fila.pagos.findIndex((p) => p.f === c.fecha);
+          if (idx >= 0) fila.pagos[idx].l = numero(fila.pagos[idx].l) + numero(c.valorNuevo);
+          else fila.pagos.push({ f: c.fecha, l: numero(c.valorNuevo) });
+          fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
+        }
+      }
+    });
+    const idsEliminar = cambiosPendientes.filter((c) => c.tipo === 'eliminar').map((c) => c.id);
+    filasTrabajo = filasTrabajo.filter((f) => !idsEliminar.includes(f.id));
+  }
+
+  return filasTrabajo.filter((f) => {
     if (desde && f.fecha < desde) return false;
     if (hasta && f.fecha > hasta) return false;
     if (miembro && f.nombre !== miembro) return false;
@@ -1469,7 +1390,7 @@ function actualizarHistorial() {
     filtroMiembro.appendChild(o);
   });
 
-  const lista = obtenerHistorialFiltrado();
+  const lista = obtenerHistorialFiltrado(true);
   let totalBruto = 0, totalNeto = 0, totalGas = 0, totalPend = 0, totalEnt = 0, totalBeneficio = 0;
   lista.forEach((d) => {
     totalBruto += numero(d.bruto);
@@ -1498,6 +1419,8 @@ function actualizarHistorial() {
       if (estado === 'entregado') tr.classList.add('fila-entregada');
 
       const celdaPagos = renderCeldaPagosHistorial(d);
+      const tieneCambioPendiente = cambiosPendientes.some((c) => c.id === d.id && c.tipo === 'pago');
+      if (tieneCambioPendiente) tr.classList.add('fila-pendiente');
 
       tr.innerHTML = `
         <td>${escaparHtml(d.fecha)}</td>
@@ -1510,17 +1433,21 @@ function actualizarHistorial() {
         <td class="celda-calculada">${formatearNumero(d.gasolina)}</td>
         <td class="${celdaPagos.clase}">${celdaPagos.html}</td>
         <td>
-          <button class="boton boton-pequeno boton-pago" data-id="${d.id}" title="Registrar entrega">Entregar</button>
           <button class="boton boton-pequeno boton-peligro eliminar-historial" data-id="${d.id}" title="Eliminar">X</button>
         </td>
       `;
       cuerpoHistorial.appendChild(tr);
     });
 
-    cuerpoHistorial.querySelectorAll('.boton-pago').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const id = parseInt(btn.dataset.id);
-        abrirModalPago(id);
+    cuerpoHistorial.querySelectorAll('.entrada-pago-fila').forEach((inp) => {
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          aplicarPagoHistorial(inp);
+        }
+      });
+      inp.addEventListener('blur', () => {
+        if (numero(inp.value) > 0) aplicarPagoHistorial(inp);
       });
     });
 
@@ -1530,17 +1457,15 @@ function actualizarHistorial() {
         const fila = datos.filas.find((f) => f.id === id);
         if (!fila) return;
         mostrarConfirmacion({
-          titulo: 'Eliminar recoleccion',
-          mensaje: '¿Eliminar esta recoleccion?',
-          sub: 'Se eliminara de la DB al guardar.',
+          titulo: 'Marcar para eliminar',
+          mensaje: '¿Marcar esta recoleccion para eliminar?',
+          sub: 'Se aplicara al presionar "Actualizar dia".',
           callback: () => {
-            datos.filas = datos.filas.filter((f) => f.id !== id);
-            marcarFilaPendiente(id);
-            fechasFilasPendientes.add(fila.fecha);
+            cambiosPendientes = cambiosPendientes.filter((c) => c.id !== id);
+            cambiosPendientes.push({ id, tipo: 'eliminar' });
             actualizarHistorial();
-            actualizarResumen();
-            renderDiaActual();
-            mostrarNotificacion('Recoleccion eliminada.', 'info');
+            actualizarBarraPendientes();
+            mostrarNotificacion('Recoleccion marcada para eliminar.', 'info');
           }
         });
       });
@@ -1548,27 +1473,69 @@ function actualizarHistorial() {
   }
 }
 
+function aplicarPagoHistorial(inp) {
+  const id = parseInt(inp.dataset.id);
+  const fila = datos.filas.find((f) => f.id === id);
+  if (!fila) return;
+  const cantidad = numero(inp.value);
+  if (cantidad <= 0) { inp.value = ''; return; }
+
+  const recompensa = gasolinaFila(fila);
+  const pagadoActual = totalPagadoFila(fila);
+  const pagadoPendiente = cambiosPendientes.filter((c) => c.id === id && c.tipo === 'pago')
+    .reduce((s, c) => s + numero(c.valorNuevo), 0);
+  const pendiente = Math.max(0, recompensa - pagadoActual - pagadoPendiente);
+
+  if (cantidad > pendiente) {
+    mostrarNotificacion('La cantidad excede el pendiente (' + formatearLitros(pendiente) + ').', 'error');
+    inp.value = '';
+    return;
+  }
+
+  cambiosPendientes.push({ id, tipo: 'pago', fecha: fechaHoy(), valorNuevo: cantidad });
+  inp.value = '';
+  actualizarHistorial();
+  actualizarBarraPendientes();
+  mostrarNotificacion('Pago pendiente agregado: ' + formatearLitros(cantidad), 'info');
+}
+
 function renderCeldaPagosHistorial(d) {
   const pagado = d.pagado;
   const pendiente = d.pendiente;
   const recompensa = d.gasolina;
   let clase = 'celda-pagos';
-  if (recompensa <= 0) clase += ' sin-pagos';
-  else if (pagado <= 0) clase += ' sin-pagos';
+  if (recompensa <= 0 || pagado <= 0) clase += ' sin-pagos';
   else if (pendiente <= 0) clase += ' entregado';
   else clase += ' parcial';
 
-  if (!d.pagos || d.pagos.length === 0) {
-    return { clase, html: '<div class="pagos-resumen">Sin entregas</div>' };
+  const pagosActuales = (d.pagos || []).slice();
+  const pagosPendientes = cambiosPendientes.filter((c) => c.id === d.id && c.tipo === 'pago');
+  const pagosPreview = pagosActuales.map((p) => ({ f: p.f, l: p.l, pendiente: false }));
+  pagosPendientes.forEach((c) => {
+    const idx = pagosPreview.findIndex((p) => p.f === c.fecha && !p.pendiente);
+    if (idx >= 0) {
+      pagosPreview.push({ f: c.fecha, l: c.valorNuevo, pendiente: true });
+    } else {
+      pagosPreview.push({ f: c.fecha, l: c.valorNuevo, pendiente: true });
+    }
+  });
+
+  let resumen = '';
+  if (pagosPreview.length === 0) {
+    resumen = '<div class="pagos-resumen">Sin entregas</div>';
+  } else {
+    resumen = '<div class="pagos-resumen">' + pagosPreview.map((p) =>
+      '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + (p.pendiente ? ' *' : '') + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
+    ).join('') + '</div>';
   }
-  const lineas = d.pagos.map((p) =>
-    '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
-  ).join('');
+
   const pendienteClase = pendiente <= 0 ? ' completa' : '';
+  const inputPago = '<input type="number" min="0" step="1" placeholder="Litros a entregar..." class="entrada-pago-fila" data-id="' + d.id + '">';
+  const infoPendiente = '<span class="celda-pendiente-fila' + pendienteClase + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>';
+
   return {
     clase,
-    html: '<div class="pagos-resumen">' + lineas + '</div>' +
-      '<span class="celda-pendiente-fila' + pendienteClase + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>'
+    html: resumen + infoPendiente + inputPago
   };
 }
 
@@ -1578,7 +1545,57 @@ function actualizarBarraPendientes() {
     return;
   }
   barraPendientes.classList.add('activa');
-  infoPendientes.textContent = 'Hay ' + cambiosPendientes.length + ' cambio(s) pendiente(s).';
+  const numPagos = cambiosPendientes.filter((c) => c.tipo === 'pago').length;
+  const numElim = cambiosPendientes.filter((c) => c.tipo === 'eliminar').length;
+  const partes = [];
+  if (numPagos > 0) partes.push(numPagos + ' pago(s)');
+  if (numElim > 0) partes.push(numElim + ' eliminacion(es)');
+  infoPendientes.textContent = 'Pendientes: ' + partes.join(' | ') + '. Presiona "Actualizar dia" para guardar.';
+}
+
+function aplicarCambiosPendientes() {
+  if (cambiosPendientes.length === 0) {
+    mostrarNotificacion('No hay cambios pendientes.', 'info');
+    return;
+  }
+  mostrarConfirmacion({
+    titulo: 'Actualizar dia',
+    mensaje: '¿Actualizar los cambios pendientes?',
+    sub: 'Se guardaran en la DB.',
+    callback: () => {
+      cambiosPendientes.forEach((c) => {
+        if (c.tipo === 'pago') {
+          const fila = datos.filas.find((f) => f.id === c.id);
+          if (fila) {
+            if (!fila.pagos) fila.pagos = [];
+            const idx = fila.pagos.findIndex((p) => p.f === c.fecha);
+            if (idx >= 0) fila.pagos[idx].l = numero(fila.pagos[idx].l) + numero(c.valorNuevo);
+            else fila.pagos.push({ f: c.fecha, l: numero(c.valorNuevo) });
+            fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
+            marcarFilaPendiente(fila.id);
+            fechasFilasPendientes.add(fila.fecha);
+          }
+        } else if (c.tipo === 'eliminar') {
+          const fila = datos.filas.find((f) => f.id === c.id);
+          if (fila) {
+            fechasFilasPendientes.add(fila.fecha);
+            marcarFilaPendiente(c.id);
+            datos.filas = datos.filas.filter((f) => f.id !== c.id);
+          }
+        }
+      });
+      const num = cambiosPendientes.length;
+      cambiosPendientes = [];
+      guardarDatos();
+      guardarPendientes();
+      actualizarBarraPendientes();
+      actualizarHistorial();
+      actualizarResumen();
+      renderDiaActual();
+      mostrarNotificacion(num + ' cambio(s) guardado(s).', 'exito');
+      sincronizarConDb(true);
+    }
+  });
 }
 
 function descartarCambiosPendientes() {
@@ -1591,17 +1608,6 @@ function descartarCambiosPendientes() {
       actualizarBarraPendientes();
       actualizarHistorial();
       mostrarNotificacion('Cambios descartados.', 'info');
-    }
-  });
-}
-
-function aplicarCambiosPendientes() {
-  mostrarConfirmacion({
-    titulo: 'Actualizar dia',
-    mensaje: '¿Guardar todos los cambios en la DB?',
-    sub: 'Se subiran los cambios locales pendientes.',
-    callback: () => {
-      sincronizarConDb(false, true);
     }
   });
 }
@@ -2248,7 +2254,7 @@ function procesarCsvImportado(event) {
 }
 
 function exportarCsvFiltrado() {
-  const lista = obtenerHistorialFiltrado();
+  const lista = obtenerHistorialFiltrado(true);
   if (lista.length === 0) { mostrarNotificacion('No hay datos con esos filtros.', 'error'); return; }
   let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Pagado (L);Pendiente (L);Beneficio (L);Pagos\n';
   lista.forEach((d) => {
@@ -2370,6 +2376,19 @@ async function enviarReporteFinal(url, nombreReportante, fecha) {
 }
 
 function cambiarVista(id) {
+  if (id !== 'vista-historial' && cambiosPendientes.length > 0) {
+    mostrarConfirmacion({
+      titulo: 'Cambios pendientes',
+      mensaje: '¿Tienes cambios pendientes sin guardar en Reportes?',
+      sub: 'Si sales, se perderan. Continuar?',
+      callback: () => {
+        cambiosPendientes = [];
+        actualizarBarraPendientes();
+        ejecutarCambioVista(id);
+      }
+    });
+    return;
+  }
   ejecutarCambioVista(id);
 }
 
@@ -2727,7 +2746,6 @@ function inicializar() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modalOverlay.classList.contains('activa')) cerrarModal();
-    if (e.key === 'Escape' && modalPago.classList.contains('activa')) cerrarModalPago();
   });
 
   document.querySelectorAll('.boton-pestana').forEach((btn) => {
