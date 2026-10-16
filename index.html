@@ -182,7 +182,7 @@
                 <th class="col-neto">Neto (L)</th>
                 <th class="col-porcentaje">% Rango</th>
                 <th class="col-recompensa">Recompensa (L)</th>
-                <th class="col-entregado">Entregado</th>
+                <th class="col-entregado">Entregar (L)</th>
                 <th class="col-accion">X</th>
               </tr>
             </thead>
@@ -295,7 +295,7 @@
                 <th class="col-neto">Neto (L)</th>
                 <th class="col-porcentaje">% Rango</th>
                 <th class="col-recompensa">Recompensa (L)</th>
-                <th class="col-pagos">Pagos</th>
+                <th class="col-pagos">Pagos / Entregar</th>
                 <th class="col-acciones">Acciones</th>
               </tr>
             </thead>
@@ -442,45 +442,6 @@
         <button class="boton" id="botonDescargarCsv">Descargar CSV</button>
         <button class="boton" id="botonImportarCsv">Importar CSV</button>
         <button class="boton boton-primario" id="botonEnviarDiscord">Enviar a Discord</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="superposicion-modal" id="modalPago">
-    <div class="modal modal-pago">
-      <div class="encabezado-modal">
-        <h2>Registrar entrega</h2>
-        <button class="cerrar-modal" id="botonCerrarPago">&times;</button>
-      </div>
-      <div class="cuerpo-modal">
-        <div class="info-pago-miembro" id="infoPagoMiembro"></div>
-        <div class="resumen-pago">
-          <div class="item-resumen-pago">
-            <span class="etiqueta-resumen">Recompensa:</span>
-            <span class="valor-resumen" id="pagoRecompensa">0 L</span>
-          </div>
-          <div class="item-resumen-pago">
-            <span class="etiqueta-resumen">Ya entregado:</span>
-            <span class="valor-resumen" id="pagoYaEntregado">0 L</span>
-          </div>
-          <div class="item-resumen-pago">
-            <span class="etiqueta-resumen">Pendiente:</span>
-            <span class="valor-resumen" id="pagoPendiente">0 L</span>
-          </div>
-        </div>
-        <div class="grupo-campo">
-          <label for="pagoCantidad">Cantidad a entregar (L)</label>
-          <input type="number" id="pagoCantidad" min="0" step="1" value="0">
-        </div>
-        <div class="grupo-campo margen-superior">
-          <label for="pagoFecha">Fecha de entrega</label>
-          <input type="date" id="pagoFecha">
-        </div>
-        <div class="lista-pagos-existentes" id="listaPagosExistentes"></div>
-      </div>
-      <div class="pie-modal">
-        <button class="boton" id="botonCancelarPago">Cancelar</button>
-        <button class="boton boton-primario" id="botonConfirmarPago">Confirmar entrega</button>
       </div>
     </div>
   </div>
