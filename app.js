@@ -602,12 +602,12 @@ function actualizarBarraConexion() {
     estadoConexion.textContent = 'Sin conexion';
   } else if (pendientes > 0 || conexionEstado === 'pendiente') {
     barraConexion.classList.add('pendiente');
-    estadoConexion.textContent = 'Cambios pendientes';
+    estadoConexion.textContent = 'Cambios sin sincronizar';
   } else {
     estadoConexion.textContent = 'Iniciando...';
   }
   let detalles = '';
-  if (pendientes > 0) detalles += pendientes + ' pendiente(s). ';
+  if (pendientes > 0) detalles += pendientes + ' sin sincronizar. ';
   if (ultimaSync) {
     const d = new Date(ultimaSync);
     detalles += 'Ultima carga: ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
