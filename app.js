@@ -219,14 +219,6 @@ function normalizarArrayPagos(a) {
     .filter((p) => p.f && p.l > 0);
 }
 
-function serializarPagos(pagos) {
-  if (!pagos || pagos.length === 0) return 'No';
-  const limpios = pagos.filter((p) => p && p.f && numero(p.l) > 0)
-    .map((p) => ({ f: normalizarFecha(p.f), l: numero(p.l) }));
-  if (limpios.length === 0) return 'No';
-  return JSON.stringify(limpios);
-}
-
 function totalPagadoFila(fila) {
   if (!fila.pagos || fila.pagos.length === 0) return 0;
   return fila.pagos.reduce((s, p) => s + numero(p.l), 0);
@@ -588,11 +580,17 @@ function limpiarTextosConexion() {
   let n;
   while ((n = walker.nextNode())) nodos.push(n);
   nodos.forEach((nodo) => {
-    const t = (nodo.nodeValue || '').trim();
-    if (t.toLowerCase().includes('cambios sin sincronizar') ||
-        t.toLowerCase().includes('sin sincronizar')) {
+    const t = (nodo.nodeValue || '').trim().toLowerCase();
+    if (t.includes('cambios sin sincronizar') || t === 'sin sincronizar') {
       nodo.nodeValue = '';
     }
+  });
+  Array.from(barraConexion.children).forEach((hijo) => {
+    if (hijo.id === 'estadoConexion' || hijo.id === 'detallesConexion') return;
+    if (hijo.querySelector && (hijo.querySelector('#estadoConexion') || hijo.querySelector('#detallesConexion'))) return;
+    if (hijo.classList && (hijo.classList.contains('acciones-conexion') || hijo.classList.contains('indicador-conexion') || hijo.classList.contains('detalles-conexion'))) return;
+    const txt = (hijo.textContent || '').toLowerCase();
+    if (txt.includes('sin sincronizar')) hijo.remove();
   });
 }
 
@@ -638,14 +636,12 @@ function marcarFilaPendiente(id) {
   filasPendientesSheets[id] = true;
   if (fila.fecha) fechasFilasPendientes.add(fila.fecha);
   guardarPendientes();
-  actualizarBarraConexion();
 }
 
 function marcarEstadoPendiente(fecha) {
   estadoPendienteSheets = true;
   if (fecha) fechasEstadoPendientes.add(fecha);
   guardarPendientes();
-  actualizarBarraConexion();
 }
 
 function marcarMiembrosPendientes() {
@@ -653,7 +649,6 @@ function marcarMiembrosPendientes() {
   barraMiembros.classList.add('activa');
   infoMiembros.textContent = 'Hay cambios pendientes en la lista de miembros';
   guardarPendientes();
-  actualizarBarraConexion();
 }
 
 function refrescarVistaPreviaReporte() {
@@ -1343,7 +1338,6 @@ function limpiarFormulario() {
       actualizarHistorial();
       actualizarResumen();
       actualizarBarraPendientes();
-      actualizarBarraConexion();
 
       mostrarNotificacion('Formulario limpiado solo en local. La DB no se tocó.', 'info');
     }
@@ -1967,7 +1961,6 @@ function descartarCambiosMiembros() {
       actualizarVistaMiembros();
       renderDiaActual();
       guardarPendientes();
-      actualizarBarraConexion();
       mostrarNotificacion('Cambios de miembros descartados.', 'info');
     }
   });
@@ -2451,7 +2444,7 @@ function ocultarLogin() {
 
 function mostrarContenido() {
   contenidoPrincipal.style.display = 'block';
-  barraConexion.style.display = 'none';
+  barraConexion.style.display = 'flex';
   pestanasPrincipales.style.display = 'flex';
   contenedorPrincipal.style.display = 'block';
 }
@@ -2608,7 +2601,6 @@ function inicializar() {
     guardarDatos();
     guardarPendientes();
     recalcularTodo();
-    actualizarBarraConexion();
   });
   produccionInput.addEventListener('input', () => {
     if (numero(produccionInput.value) < 0) { mostrarNotificacion('El campo "Produccion" no puede ser negativo.', 'error'); produccionInput.value = 0; }
@@ -2630,7 +2622,6 @@ function inicializar() {
     guardarDatos();
     guardarPendientes();
     recalcularTodo();
-    actualizarBarraConexion();
   });
   porcentajeRecolectorInput.addEventListener('input', () => {
     if (numero(porcentajeRecolectorInput.value) < 0) { mostrarNotificacion('El campo "Porcentaje Recolector" no puede ser negativo.', 'error'); porcentajeRecolectorInput.value = 0; }
@@ -2653,7 +2644,6 @@ function inicializar() {
     guardarDatos();
     guardarPendientes();
     recalcularTodo();
-    actualizarBarraConexion();
   });
   porcentajeCamioneroInput.addEventListener('input', () => {
     if (numero(porcentajeCamioneroInput.value) < 0) { mostrarNotificacion('El campo "Porcentaje Camionero" no puede ser negativo.', 'error'); porcentajeCamioneroInput.value = 0; }
@@ -2676,7 +2666,6 @@ function inicializar() {
     guardarDatos();
     guardarPendientes();
     recalcularTodo();
-    actualizarBarraConexion();
   });
   estadoDeposito.addEventListener('input', () => {
     if (numero(estadoDeposito.value) < 0) { mostrarNotificacion('El campo "Deposito actual" no puede ser negativo.', 'error'); estadoDeposito.value = 0; }
