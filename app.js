@@ -1027,9 +1027,6 @@ function recalcularTodo() {
     tr.querySelector('.porcentaje-celda').textContent = formatearNumero(porc) + '%';
     tr.querySelector('.gasolina-celda').textContent = formatearNumero(gas);
 
-    const celdaEntregas = tr.querySelector('.celda-entregas-dinamica');
-    if (celdaEntregas) renderEntregasEnCelda(celdaEntregas, fila, pendiente);
-
     sumaBruto += bruto; sumaNeto += neto; sumaGas += gas;
     pend += pendiente;
     ent += pagado;
@@ -1044,27 +1041,6 @@ function recalcularTodo() {
 
   guardarDatos();
   refrescarVistaPreviaReporte();
-}
-
-function renderEntregasEnCelda(celda, fila, pendiente) {
-  const pagado = totalPagadoFila(fila);
-  const recompensa = gasolinaFila(fila);
-  let clase = 'celda-celda-interna';
-  if (!fila.pagos || fila.pagos.length === 0 || recompensa <= 0) clase += ' sin-pagos';
-  else if (pendiente <= 0) clase += ' entregado';
-  else clase += ' parcial';
-
-  let resumen = '';
-  if (!fila.pagos || fila.pagos.length === 0) {
-    resumen = '<div class="pagos-resumen">Sin entregas</div>';
-  } else {
-    resumen = '<div class="pagos-resumen">' + fila.pagos.map((p) =>
-      '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
-    ).join('') + '</div>';
-  }
-  const pendienteClase = pendiente <= 0 ? ' completa' : '';
-  celda.innerHTML = resumen +
-    '<span class="celda-pendiente-fila' + pendienteClase + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>';
 }
 
 function crearFilaDom(fila, fecha) {
@@ -1151,10 +1127,8 @@ function crearFilaDom(fila, fecha) {
   inputPago.type = 'number';
   inputPago.min = '0';
   inputPago.step = '1';
-  inputPago.placeholder = 'Litros...';
   inputPago.className = 'entrada-pago-fila';
-  const hoy = obtenerPagoHoy(fila);
-  inputPago.value = hoy > 0 ? hoy : '';
+  inputPago.value = obtenerPagoHoy(fila);
   tdPago.appendChild(inputPago);
   tr.appendChild(tdPago);
 
@@ -1422,10 +1396,8 @@ function actualizarHistorial() {
       inputPago.type = 'number';
       inputPago.min = '0';
       inputPago.step = '1';
-      inputPago.placeholder = 'Litros...';
       inputPago.className = 'entrada-pago-fila';
-      const hoy = obtenerPagoHoy(d);
-      inputPago.value = hoy > 0 ? hoy : '';
+      inputPago.value = obtenerPagoHoy(d);
       tdPagar.appendChild(inputPago);
 
       inputPago.addEventListener('input', () => {
