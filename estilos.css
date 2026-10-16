@@ -373,10 +373,6 @@ input[type="checkbox"] {
 .margen-inferior { margin-bottom: 16px; }
 
 tr.fila-pendiente td { background: rgba(201, 162, 39, 0.06); }
-tr.fila-pendiente .check-historial {
-  outline: 2px solid rgba(201, 162, 39, 0.6);
-  outline-offset: 2px;
-}
 
 .barra-pendientes {
   display: none; align-items: center; justify-content: space-between;
@@ -478,11 +474,13 @@ td input, td select {
 .col-neto { min-width: 120px; }
 .col-porcentaje { min-width: 90px; }
 .col-recompensa { min-width: 130px; }
-.col-entregado { min-width: 90px; }
+.col-entregado { min-width: 130px; }
 .col-accion { min-width: 60px; }
 .col-fecha { min-width: 130px; }
 .col-fecha-pago { min-width: 110px; }
 .col-acciones { min-width: 90px; }
+.col-entregas { min-width: 200px; }
+.col-pagar { min-width: 140px; }
 
 .celda-calculada {
   background: repeating-linear-gradient(0deg, #080808 0px, #080808 2px, #0d0d0d 2px, #0d0d0d 4px);
@@ -829,43 +827,41 @@ td input, td select {
   min-height: 18px;
 }
 
-.col-pagos { min-width: 220px; }
-.celda-pagos {
+.celda-entregas {
   background: repeating-linear-gradient(0deg, #080808 0px, #080808 2px, #0d0d0d 2px, #0d0d0d 4px);
   color: var(--plateado);
   padding: 6px 8px;
   font-size: 0.78rem;
   letter-spacing: 0.5px;
 }
-.celda-pagos .pagos-resumen {
+.celda-entregas .pagos-resumen {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-bottom: 6px;
 }
-.celda-pagos .pagos-resumen .linea {
+.celda-entregas .pagos-resumen .linea {
   display: flex;
   justify-content: space-between;
   gap: 6px;
 }
-.celda-pagos .pagos-resumen .linea .fecha {
+.celda-entregas .pagos-resumen .linea .fecha {
   color: var(--texto-secundario);
   font-family: 'Courier New', monospace;
   font-size: 0.72rem;
 }
-.celda-pagos .pagos-resumen .linea .litros {
+.celda-entregas .pagos-resumen .linea .litros {
   color: var(--plateado-claro);
   font-weight: 700;
   text-shadow: 0 0 5px rgba(208,208,208,0.5);
 }
-.celda-pagos.sin-pagos {
+.celda-entregas.sin-pagos {
   color: var(--texto-secundario);
   font-style: italic;
 }
-.celda-pagos.parcial .pagos-resumen .linea .litros {
+.celda-entregas.parcial .pagos-resumen .linea .litros {
   color: #e0b93a;
 }
-.celda-pagos.entregado .pagos-resumen .linea .litros {
+.celda-entregas.entregado .pagos-resumen .linea .litros {
   color: var(--color-ok);
 }
 .celda-pendiente-fila {
@@ -884,16 +880,23 @@ td input, td select {
 .celda-pendiente-fila.completa .num {
   color: var(--color-ok);
 }
+
+.celda-pagar {
+  background: repeating-linear-gradient(0deg, #080808 0px, #080808 2px, #0d0d0d 2px, #0d0d0d 4px);
+  padding: 6px 8px;
+}
+
 .entrada-pago-fila {
   width: 100%;
   background: var(--fondo-entrada);
   border: 2px solid var(--color-borde);
   color: var(--plateado-claro);
-  padding: 6px 8px;
-  font-size: 0.82rem;
+  padding: 8px 10px;
+  font-size: 0.9rem;
   border-radius: 2px;
   font-family: 'Franklin Gothic Medium', 'Arial Narrow', sans-serif;
   letter-spacing: 1px;
+  text-align: right;
   box-shadow: inset 2px 2px 3px rgba(0,0,0,0.8);
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
@@ -902,29 +905,9 @@ td input, td select {
   border-color: var(--plateado);
   box-shadow: inset 2px 2px 3px rgba(0,0,0,0.8), 0 0 0 3px var(--brillo-plateado);
 }
-.entrada-pago-fila:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  font-style: italic;
-}
 .entrada-pago-fila::placeholder {
   color: var(--texto-secundario);
   font-style: italic;
   letter-spacing: 0.5px;
-}
-.celda-entregar-dia {
-  background: repeating-linear-gradient(0deg, #080808 0px, #080808 2px, #0d0d0d 2px, #0d0d0d 4px);
-  padding: 6px 8px;
   text-align: center;
-}
-.celda-entregar-dia .info-pago {
-  display: block;
-  color: var(--texto-secundario);
-  font-size: 0.68rem;
-  margin-top: 4px;
-  letter-spacing: 0.5px;
-}
-.celda-entregar-dia .info-pago .completa {
-  color: var(--color-ok);
-  font-weight: 700;
 }
