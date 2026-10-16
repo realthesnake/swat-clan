@@ -64,6 +64,18 @@ const entradaWebhook = consultar('entradaWebhook');
 const entradaCsv = consultar('entradaCsv');
 const notificacion = consultar('notificacion');
 
+const modalPago = consultar('modalPago');
+const infoPagoMiembro = consultar('infoPagoMiembro');
+const pagoRecompensa = consultar('pagoRecompensa');
+const pagoYaEntregado = consultar('pagoYaEntregado');
+const pagoPendiente = consultar('pagoPendiente');
+const pagoCantidad = consultar('pagoCantidad');
+const pagoFecha = consultar('pagoFecha');
+const listaPagosExistentes = consultar('listaPagosExistentes');
+const botonCerrarPago = consultar('botonCerrarPago');
+const botonCancelarPago = consultar('botonCancelarPago');
+const botonConfirmarPago = consultar('botonConfirmarPago');
+
 const estadoConexion = consultar('estadoConexion');
 const detallesConexion = consultar('detallesConexion');
 
@@ -102,6 +114,9 @@ let confirmCallback = null;
 let filtrosAplicados = { desde: '', hasta: '', miembro: '', estado: '' };
 let cargando = false;
 let tokenValido = false;
+
+let pagoFilaActualId = null;
+let pagosPendientesPago = [];
 
 const botonesModal = ['botonRefrescarReporte', 'botonCopiarReporte', 'botonDescargarCsv', 'botonImportarCsv', 'botonEnviarDiscord', 'botonCerrarModal'];
 
@@ -196,6 +211,60 @@ function escaparHtml(s) {
   return String(s || '').replace(/[&<>"']/g, (m) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[m]);
+}
+
+function parsearPagos(celda) {
+  if (celda === null || celda === undefined) return [];
+  if (Array.isArray(celda)) return normalizarArrayPagos(celda);
+  const s = String(celda).trim();
+  if (s === '' || s.toLowerCase() === 'no') return [];
+  try {
+    const a = JSON.parse(s);
+    if (!Array.isArray(a)) return [];
+    return normalizarArrayPagos(a);
+  } catch (e) {
+    return [];
+  }
+}
+
+function normalizarArrayPagos(a) {
+  return a.filter((p) => p && typeof p === 'object' && p.f && (typeof p.l === 'number' || !isNaN(Number(p.l))))
+    .map((p) => ({ f: normalizarFecha(p.f), l: numero(p.l) }))
+    .filter((p) => p.f && p.l > 0);
+}
+
+function serializarPagos(pagos) {
+  if (!pagos || pagos.length === 0) return 'No';
+  const limpios = pagos.filter((p) => p && p.f && numero(p.l) > 0)
+    .map((p) => ({ f: normalizarFecha(p.f), l: numero(p.l) }));
+  if (limpios.length === 0) return 'No';
+  return JSON.stringify(limpios);
+}
+
+function totalPagadoFila(fila) {
+  if (!fila.pagos || fila.pagos.length === 0) return 0;
+  return fila.pagos.reduce((s, p) => s + numero(p.l), 0);
+}
+
+function totalPagadoHoyFila(fila, fecha) {
+  if (!fila.pagos || fila.pagos.length === 0) return 0;
+  const fNorm = normalizarFecha(fecha);
+  return fila.pagos.filter((p) => p.f === fNorm).reduce((s, p) => s + numero(p.l), 0);
+}
+
+function pendienteFila(fila) {
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  return Math.max(0, recompensa - pagado);
+}
+
+function estadoPagoFila(fila) {
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  if (recompensa <= 0) return 'vacio';
+  if (pagado <= 0) return 'pendiente';
+  if (pagado >= recompensa) return 'entregado';
+  return 'parcial';
 }
 
 function obtenerTokenGuardado() {
@@ -392,19 +461,10 @@ function sincronizarFilasDesdeDom(fecha) {
     const inputHora = tr.querySelector('.hora-input');
     const selectNombre = tr.querySelector('.nombre-select');
     const selectRango = tr.querySelector('.rango-select');
-    const check = tr.querySelector('.entregado-check');
     if (inputBruto) fila.bruto = numero(inputBruto.value);
     if (inputHora) fila.hora = inputHora.value;
     if (selectNombre) fila.nombre = selectNombre.value;
     if (selectRango) fila.rango = selectRango.value;
-    if (check) {
-      fila.entregado = check.checked;
-      if (check.checked) {
-        fila.fechaEntregado = fila.fechaEntregado || fechaHoy();
-      } else {
-        fila.fechaEntregado = '';
-      }
-    }
   });
 }
 
@@ -474,7 +534,7 @@ function cargarDatos() {
           ...f,
           id: id,
           fecha: fechaNorm,
-          fechaEntregado: normalizarFecha(f.fechaEntregado)
+          pagos: parsearPagos(f.pagos)
         });
       });
       datos.filas = filasNorm;
@@ -635,7 +695,7 @@ async function sincronizarConDb(silencioso = false, forzarReemplazoCompleto = fa
           nombre: f.nombre, rango: f.rango,
           bruto: numero(f.bruto),
           neto: netoFila(f), porcentaje: porcentajeFila(f), gasolina: gasolinaFila(f),
-          entregado: !!f.entregado, fechaEntregado: f.fechaEntregado || ''
+          pagos: f.pagos || []
         }));
       const resp = await enviarPeticion('reemplazar_dia', { fecha: fechaNorm, filas: filasDia });
       if (resp.result !== 'success') throw new Error(resp.mensaje || 'Error');
@@ -742,8 +802,7 @@ async function cargarDesdeDb(silencioso = false) {
           nombre: f.nombre,
           rango: f.rango,
           bruto: numero(f.bruto),
-          entregado: !!f.entregado,
-          fechaEntregado: normalizarFecha(f.fechaEntregado),
+          pagos: parsearPagos(f.pagos),
           _gasolinaSheet: Number(f.gasolina) || 0,
           _netoSheet: Number(f.neto) || 0,
           _porcentajeSheet: Number(f.porcentaje) || 0
@@ -861,8 +920,7 @@ async function refrescarDesdeDbParaReporte() {
         nombre: f.nombre,
         rango: f.rango,
         bruto: numero(f.bruto),
-        entregado: !!f.entregado,
-        fechaEntregado: normalizarFecha(f.fechaEntregado),
+        pagos: parsearPagos(f.pagos),
         _gasolinaSheet: Number(f.gasolina) || 0,
         _netoSheet: Number(f.neto) || 0,
         _porcentajeSheet: Number(f.porcentaje) || 0
@@ -962,13 +1020,19 @@ function recalcularTodo() {
     const neto = netoFila(fila);
     const porc = porcentajeFila(fila);
     const gas = gasolinaFila(fila);
+    const pagado = totalPagadoFila(fila);
+    const pendiente = Math.max(0, gas - pagado);
 
     tr.querySelector('.neto-celda').textContent = formatearNumero(neto);
     tr.querySelector('.porcentaje-celda').textContent = formatearNumero(porc) + '%';
     tr.querySelector('.gasolina-celda').textContent = formatearNumero(gas);
 
+    const celdaPago = tr.querySelector('.celda-pago-dinamica');
+    if (celdaPago) actualizarCeldaPago(celdaPago, fila);
+
     sumaBruto += bruto; sumaNeto += neto; sumaGas += gas;
-    if (fila.entregado) ent += gas; else pend += gas;
+    pend += pendiente;
+    ent += pagado;
   });
 
   totalCrudo.textContent = formatearNumero(sumaBruto);
@@ -982,10 +1046,27 @@ function recalcularTodo() {
   refrescarVistaPreviaReporte();
 }
 
+function actualizarCeldaPago(celdaPago, fila) {
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  const pendiente = Math.max(0, recompensa - pagado);
+  const estado = estadoPagoFila(fila);
+
+  celdaPago.className = 'celda-pago-dinamica celda-pagos ' + estado;
+  if (!fila.pagos || fila.pagos.length === 0) {
+    celdaPago.innerHTML = '<div class="pagos-resumen">Sin entregas</div>';
+  } else {
+    const lineas = fila.pagos.map((p) =>
+      '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
+    ).join('');
+    celdaPago.innerHTML = '<div class="pagos-resumen">' + lineas + '</div>' +
+      '<span class="celda-pendiente-fila' + (pendiente <= 0 ? ' completa' : '') + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>';
+  }
+}
+
 function crearFilaDom(fila, fecha) {
   const tr = document.createElement('tr');
   tr.dataset.id = fila.id;
-  if (fila.entregado) tr.classList.add('fila-entregada');
 
   const tdHora = document.createElement('td');
   const inputHora = document.createElement('input');
@@ -1061,14 +1142,12 @@ function crearFilaDom(fila, fecha) {
   tdGas.textContent = '0';
   tr.appendChild(tdGas);
 
-  const tdEnt = document.createElement('td');
-  tdEnt.style.textAlign = 'center';
-  const check = document.createElement('input');
-  check.type = 'checkbox';
-  check.checked = !!fila.entregado;
-  check.className = 'entregado-check';
-  tdEnt.appendChild(check);
-  tr.appendChild(tdEnt);
+  const tdPago = document.createElement('td');
+  tdPago.className = 'celda-pago-dinamica celda-pagos';
+  tdPago.addEventListener('click', () => abrirModalPago(fila.id));
+  tdPago.style.cursor = 'pointer';
+  tdPago.title = 'Clic para registrar entrega';
+  tr.appendChild(tdPago);
 
   const tdX = document.createElement('td');
   const botonX = document.createElement('button');
@@ -1109,13 +1188,6 @@ function crearFilaDom(fila, fecha) {
     recalcularTodo();
     marcarFilaPendiente(fila.id);
   });
-  check.addEventListener('change', () => {
-    fila.entregado = check.checked;
-    fila.fechaEntregado = check.checked ? fechaHoy() : '';
-    tr.classList.toggle('fila-entregada', check.checked);
-    recalcularTodo();
-    marcarFilaPendiente(fila.id);
-  });
 
   const inputs = [inputHora, selectNombre, selectRango, inputBruto];
   inputs.forEach((input, idx) => {
@@ -1148,8 +1220,7 @@ function agregarFila() {
   const nuevoId = generarIdUnico();
   const nueva = {
     id: nuevoId, fecha: fecha, hora: horaActual(),
-    nombre: '', rango: 'Recolector', bruto: 0, entregado: false,
-    fechaEntregado: ''
+    nombre: '', rango: 'Recolector', bruto: 0, pagos: []
   };
   datos.filas.push(nueva);
   renderDiaActual();
@@ -1182,6 +1253,133 @@ function eliminarFila(id) {
     }
   });
 }
+
+function abrirModalPago(filaId) {
+  const fila = datos.filas.find((f) => f.id === filaId);
+  if (!fila) return;
+  pagoFilaActualId = filaId;
+
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  const pendiente = Math.max(0, recompensa - pagado);
+
+  infoPagoMiembro.textContent = (fila.nombre || '(sin nombre)') + ' · ' + fila.fecha + ' ' + (fila.hora || '');
+  pagoRecompensa.textContent = formatearLitros(recompensa);
+  pagoYaEntregado.textContent = formatearLitros(pagado);
+  pagoPendiente.textContent = formatearLitros(pendiente);
+  pagoPendiente.className = 'valor-resumen' + (pendiente <= 0 ? ' completa' : ' pendiente');
+
+  pagoCantidad.value = pendiente > 0 ? pendiente : 0;
+  pagoCantidad.max = pendiente;
+  pagoFecha.value = fechaHoy();
+
+  renderPagosExistentes(fila);
+
+  modalPago.classList.add('activa');
+  setTimeout(() => pagoCantidad.focus(), 100);
+}
+
+function renderPagosExistentes(fila) {
+  if (!fila.pagos || fila.pagos.length === 0) {
+    listaPagosExistentes.innerHTML = '';
+    return;
+  }
+  listaPagosExistentes.innerHTML = fila.pagos.map((p) =>
+    '<div class="pago-item" data-fecha="' + escaparHtml(p.f) + '">' +
+      '<span class="fecha-pago">' + escaparHtml(p.f) + '</span>' +
+      '<span class="litros-pago">' + formatearNumero(p.l) + ' L</span>' +
+      '<button class="eliminar-pago" data-fecha="' + escaparHtml(p.f) + '" title="Eliminar pago">×</button>' +
+    '</div>'
+  ).join('');
+
+  listaPagosExistentes.querySelectorAll('.eliminar-pago').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const fecha = btn.dataset.fecha;
+      mostrarConfirmacion({
+        titulo: 'Eliminar entrega',
+        mensaje: '¿Eliminar la entrega del ' + fecha + '?',
+        callback: () => {
+          const fila = datos.filas.find((f) => f.id === pagoFilaActualId);
+          if (!fila) return;
+          fila.pagos = (fila.pagos || []).filter((p) => p.f !== fecha);
+          marcarFilaPendiente(fila.id);
+          recalcularTodo();
+          actualizarHistorial();
+          const recompensa = gasolinaFila(fila);
+          const pagado = totalPagadoFila(fila);
+          pagoYaEntregado.textContent = formatearLitros(pagado);
+          const pendiente = Math.max(0, recompensa - pagado);
+          pagoPendiente.textContent = formatearLitros(pendiente);
+          pagoPendiente.className = 'valor-resumen' + (pendiente <= 0 ? ' completa' : ' pendiente');
+          pagoCantidad.value = pendiente > 0 ? pendiente : 0;
+          renderPagosExistentes(fila);
+        }
+      });
+    });
+  });
+}
+
+function cerrarModalPago() {
+  modalPago.classList.remove('activa');
+  pagoFilaActualId = null;
+}
+
+function confirmarPago() {
+  if (!pagoFilaActualId) return;
+  const fila = datos.filas.find((f) => f.id === pagoFilaActualId);
+  if (!fila) return;
+
+  const cantidad = numero(pagoCantidad.value);
+  if (cantidad <= 0) {
+    mostrarNotificacion('La cantidad debe ser mayor a 0.', 'error');
+    return;
+  }
+  const fechaPago = normalizarFecha(pagoFecha.value) || fechaHoy();
+
+  const recompensa = gasolinaFila(fila);
+  const pagado = totalPagadoFila(fila);
+  const pendiente = Math.max(0, recompensa - pagado);
+  if (cantidad > pendiente) {
+    mostrarNotificacion('La cantidad excede el pendiente (' + formatearLitros(pendiente) + ').', 'error');
+    return;
+  }
+
+  if (!fila.pagos) fila.pagos = [];
+  const idx = fila.pagos.findIndex((p) => p.f === fechaPago);
+  if (idx >= 0) {
+    fila.pagos[idx].l = numero(fila.pagos[idx].l) + cantidad;
+  } else {
+    fila.pagos.push({ f: fechaPago, l: cantidad });
+    fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
+  }
+
+  marcarFilaPendiente(fila.id);
+  recalcularTodo();
+  actualizarHistorial();
+  actualizarResumen();
+
+  const nuevoPagado = totalPagadoFila(fila);
+  const nuevoPendiente = Math.max(0, recompensa - nuevoPagado);
+  pagoYaEntregado.textContent = formatearLitros(nuevoPagado);
+  pagoPendiente.textContent = formatearLitros(nuevoPendiente);
+  pagoPendiente.className = 'valor-resumen' + (nuevoPendiente <= 0 ? ' completa' : ' pendiente');
+  pagoCantidad.value = nuevoPendiente > 0 ? nuevoPendiente : 0;
+  renderPagosExistentes(fila);
+
+  mostrarNotificacion('Entrega registrada: ' + formatearLitros(cantidad), 'exito');
+
+  if (nuevoPendiente <= 0) {
+    setTimeout(() => cerrarModalPago(), 400);
+  }
+}
+
+botonCerrarPago.addEventListener('click', cerrarModalPago);
+botonCancelarPago.addEventListener('click', cerrarModalPago);
+botonConfirmarPago.addEventListener('click', confirmarPago);
+modalPago.addEventListener('click', (e) => { if (e.target === modalPago) cerrarModalPago(); });
+pagoCantidad.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); confirmarPago(); }
+});
 
 function limpiarFormulario() {
   mostrarConfirmacion({
@@ -1233,39 +1431,30 @@ function aplicarFiltros() {
   mostrarNotificacion('Filtros aplicados.', 'info');
 }
 
-function obtenerHistorialFiltrado(usarCambiosPendientes = false) {
+function obtenerHistorialFiltrado() {
   const desde = filtrosAplicados.desde;
   const hasta = filtrosAplicados.hasta;
   const miembro = filtrosAplicados.miembro;
   const estado = filtrosAplicados.estado;
 
-  let filasTrabajo = datos.filas.slice();
-  if (usarCambiosPendientes) {
-    cambiosPendientes.forEach((c) => {
-      if (c.tipo === 'check') {
-        const fila = filasTrabajo.find((f) => f.id === c.id);
-        if (fila) {
-          fila.entregado = c.valorNuevo;
-          fila.fechaEntregado = c.valorNuevo ? (c.fechaEntregadoNuevo || fechaHoy()) : '';
-        }
-      }
-    });
-    const idsEliminar = cambiosPendientes.filter((c) => c.tipo === 'eliminar').map((c) => c.id);
-    filasTrabajo = filasTrabajo.filter((f) => !idsEliminar.includes(f.id));
-  }
-
-  return filasTrabajo.filter((f) => {
+  return datos.filas.filter((f) => {
     if (desde && f.fecha < desde) return false;
     if (hasta && f.fecha > hasta) return false;
     if (miembro && f.nombre !== miembro) return false;
-    if (estado === 'pendiente' && f.entregado) return false;
-    if (estado === 'entregado' && !f.entregado) return false;
+    if (estado) {
+      const e = estadoPagoFila(f);
+      if (estado === 'pendiente' && e !== 'pendiente') return false;
+      if (estado === 'parcial' && e !== 'parcial') return false;
+      if (estado === 'entregado' && e !== 'entregado') return false;
+    }
     return true;
   }).map((f) => {
     const neto = netoFila(f);
     const porc = porcentajeFila(f);
     const gas = gasolinaFila(f);
-    return { ...f, neto, porcentaje: porc, gasolina: gas, beneficio: neto - gas, rendimiento: calcularRendimientoDeDia(f.fecha) };
+    const pagado = totalPagadoFila(f);
+    const pendiente = Math.max(0, gas - pagado);
+    return { ...f, neto, porcentaje: porc, gasolina: gas, pagado, pendiente, beneficio: neto - gas, rendimiento: calcularRendimientoDeDia(f.fecha) };
   });
 }
 
@@ -1280,14 +1469,15 @@ function actualizarHistorial() {
     filtroMiembro.appendChild(o);
   });
 
-  const lista = obtenerHistorialFiltrado(true);
+  const lista = obtenerHistorialFiltrado();
   let totalBruto = 0, totalNeto = 0, totalGas = 0, totalPend = 0, totalEnt = 0, totalBeneficio = 0;
   lista.forEach((d) => {
     totalBruto += numero(d.bruto);
     totalNeto += d.neto;
     totalGas += d.gasolina;
     totalBeneficio += d.beneficio;
-    if (d.entregado) totalEnt += d.gasolina; else totalPend += d.gasolina;
+    totalEnt += d.pagado;
+    totalPend += d.pendiente;
   });
 
   consultar('statCrudoBruto').textContent = formatearLitros(totalBruto);
@@ -1304,9 +1494,10 @@ function actualizarHistorial() {
     lista.sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')));
     lista.forEach((d) => {
       const tr = document.createElement('tr');
-      if (d.entregado) tr.classList.add('fila-entregada');
-      const tieneCheckPendiente = cambiosPendientes.some((c) => c.id === d.id && c.tipo === 'check');
-      if (tieneCheckPendiente) tr.classList.add('fila-pendiente');
+      const estado = estadoPagoFila(d);
+      if (estado === 'entregado') tr.classList.add('fila-entregada');
+
+      const celdaPagos = renderCeldaPagosHistorial(d);
 
       tr.innerHTML = `
         <td>${escaparHtml(d.fecha)}</td>
@@ -1317,40 +1508,19 @@ function actualizarHistorial() {
         <td class="celda-calculada">${formatearNumero(d.neto)}</td>
         <td class="celda-calculada">${formatearNumero(d.porcentaje)}%</td>
         <td class="celda-calculada">${formatearNumero(d.gasolina)}</td>
-        <td style="text-align:center;">
-          <input type="checkbox" class="check-historial" ${d.entregado ? 'checked' : ''} data-id="${d.id}">
-        </td>
-        <td style="text-align:center;">${escaparHtml(d.fechaEntregado || '—')}</td>
+        <td class="${celdaPagos.clase}">${celdaPagos.html}</td>
         <td>
+          <button class="boton boton-pequeno boton-pago" data-id="${d.id}" title="Registrar entrega">Entregar</button>
           <button class="boton boton-pequeno boton-peligro eliminar-historial" data-id="${d.id}" title="Eliminar">X</button>
         </td>
       `;
       cuerpoHistorial.appendChild(tr);
     });
 
-    cuerpoHistorial.querySelectorAll('.check-historial').forEach((chk) => {
-      chk.addEventListener('change', () => {
-        const id = parseInt(chk.dataset.id);
-        const fila = datos.filas.find((f) => f.id === id);
-        if (!fila) return;
-        const idx = cambiosPendientes.findIndex((c) => c.id === id && c.tipo === 'check');
-        const valorAnterior = fila.entregado;
-        const valorNuevo = chk.checked;
-        if (valorNuevo === valorAnterior) {
-          if (idx >= 0) cambiosPendientes.splice(idx, 1);
-        } else {
-          if (idx >= 0) {
-            cambiosPendientes[idx].valorNuevo = valorNuevo;
-            cambiosPendientes[idx].fechaEntregadoNuevo = valorNuevo ? fechaHoy() : '';
-          } else {
-            cambiosPendientes.push({
-              id, tipo: 'check', valorAnterior, valorNuevo,
-              fechaEntregadoNuevo: valorNuevo ? fechaHoy() : ''
-            });
-          }
-        }
-        actualizarHistorial();
-        actualizarBarraPendientes();
+    cuerpoHistorial.querySelectorAll('.boton-pago').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.dataset.id);
+        abrirModalPago(id);
       });
     });
 
@@ -1360,20 +1530,46 @@ function actualizarHistorial() {
         const fila = datos.filas.find((f) => f.id === id);
         if (!fila) return;
         mostrarConfirmacion({
-          titulo: 'Marcar para eliminar',
-          mensaje: '¿Marcar esta recoleccion para eliminar?',
-          sub: 'Se aplicara al presionar "Actualizar dia".',
+          titulo: 'Eliminar recoleccion',
+          mensaje: '¿Eliminar esta recoleccion?',
+          sub: 'Se eliminara de la DB al guardar.',
           callback: () => {
-            cambiosPendientes = cambiosPendientes.filter((c) => c.id !== id);
-            cambiosPendientes.push({ id, tipo: 'eliminar', valorAnterior: null, valorNuevo: null });
+            datos.filas = datos.filas.filter((f) => f.id !== id);
+            marcarFilaPendiente(id);
+            fechasFilasPendientes.add(fila.fecha);
             actualizarHistorial();
-            actualizarBarraPendientes();
-            mostrarNotificacion('Recoleccion marcada para eliminar.', 'info');
+            actualizarResumen();
+            renderDiaActual();
+            mostrarNotificacion('Recoleccion eliminada.', 'info');
           }
         });
       });
     });
   }
+}
+
+function renderCeldaPagosHistorial(d) {
+  const pagado = d.pagado;
+  const pendiente = d.pendiente;
+  const recompensa = d.gasolina;
+  let clase = 'celda-pagos';
+  if (recompensa <= 0) clase += ' sin-pagos';
+  else if (pagado <= 0) clase += ' sin-pagos';
+  else if (pendiente <= 0) clase += ' entregado';
+  else clase += ' parcial';
+
+  if (!d.pagos || d.pagos.length === 0) {
+    return { clase, html: '<div class="pagos-resumen">Sin entregas</div>' };
+  }
+  const lineas = d.pagos.map((p) =>
+    '<div class="linea"><span class="fecha">' + escaparHtml(p.f) + '</span><span class="litros">' + formatearNumero(p.l) + ' L</span></div>'
+  ).join('');
+  const pendienteClase = pendiente <= 0 ? ' completa' : '';
+  return {
+    clase,
+    html: '<div class="pagos-resumen">' + lineas + '</div>' +
+      '<span class="celda-pendiente-fila' + pendienteClase + '">Pendiente: <span class="num">' + formatearNumero(pendiente) + ' L</span></span>'
+  };
 }
 
 function actualizarBarraPendientes() {
@@ -1382,54 +1578,7 @@ function actualizarBarraPendientes() {
     return;
   }
   barraPendientes.classList.add('activa');
-  const numChecks = cambiosPendientes.filter((c) => c.tipo === 'check').length;
-  const numElim = cambiosPendientes.filter((c) => c.tipo === 'eliminar').length;
-  const partes = [];
-  if (numChecks > 0) partes.push(numChecks + ' cambio(s)');
-  if (numElim > 0) partes.push(numElim + ' eliminacion(es)');
-  infoPendientes.textContent = 'Pendientes: ' + partes.join(' | ') + '. Presiona "Actualizar dia" para guardar.';
-}
-
-function aplicarCambiosPendientes() {
-  if (cambiosPendientes.length === 0) {
-    mostrarNotificacion('No hay cambios pendientes.', 'info');
-    return;
-  }
-  mostrarConfirmacion({
-    titulo: 'Actualizar dia',
-    mensaje: '¿Actualizar los cambios pendientes?',
-    sub: 'Se guardaran en la DB.',
-    callback: () => {
-      cambiosPendientes.forEach((c) => {
-        if (c.tipo === 'check') {
-          const fila = datos.filas.find((f) => f.id === c.id);
-          if (fila) {
-            fila.entregado = c.valorNuevo;
-            fila.fechaEntregado = c.valorNuevo ? (c.fechaEntregadoNuevo || fechaHoy()) : '';
-            marcarFilaPendiente(fila.id);
-            fechasFilasPendientes.add(fila.fecha);
-          }
-        } else if (c.tipo === 'eliminar') {
-          const fila = datos.filas.find((f) => f.id === c.id);
-          if (fila) {
-            fechasFilasPendientes.add(fila.fecha);
-            marcarFilaPendiente(c.id);
-            datos.filas = datos.filas.filter((f) => f.id !== c.id);
-          }
-        }
-      });
-      const num = cambiosPendientes.length;
-      cambiosPendientes = [];
-      guardarDatos();
-      guardarPendientes();
-      actualizarBarraPendientes();
-      actualizarHistorial();
-      actualizarResumen();
-      renderDiaActual();
-      mostrarNotificacion(num + ' cambio(s) guardado(s).', 'exito');
-      sincronizarConDb(true);
-    }
-  });
+  infoPendientes.textContent = 'Hay ' + cambiosPendientes.length + ' cambio(s) pendiente(s).';
 }
 
 function descartarCambiosPendientes() {
@@ -1446,6 +1595,17 @@ function descartarCambiosPendientes() {
   });
 }
 
+function aplicarCambiosPendientes() {
+  mostrarConfirmacion({
+    titulo: 'Actualizar dia',
+    mensaje: '¿Guardar todos los cambios en la DB?',
+    sub: 'Se subiran los cambios locales pendientes.',
+    callback: () => {
+      sincronizarConDb(false, true);
+    }
+  });
+}
+
 function actualizarResumen() {
   let totalBruto = 0, totalNeto = 0, totalGas = 0, totalEnt = 0, totalBeneficio = 0;
   const fechasConDatos = new Set();
@@ -1455,17 +1615,18 @@ function actualizarResumen() {
     const neto = netoFila(f);
     const porc = porcentajeFila(f);
     const gas = gasolinaFila(f);
+    const pagado = totalPagadoFila(f);
     const beneficio = neto - gas;
     todosLosDatos.push({
       fecha: f.fecha, nombre: f.nombre, rango: f.rango,
-      bruto: numero(f.bruto), neto, gasolina: gas, beneficio, entregado: f.entregado,
-      fechaEntregado: f.fechaEntregado || ''
+      bruto: numero(f.bruto), neto, gasolina: gas, beneficio, pagado,
+      entregado: pagado > 0
     });
     totalBruto += numero(f.bruto);
     totalNeto += neto;
     totalGas += gas;
     totalBeneficio += beneficio;
-    if (f.entregado) totalEnt += gas;
+    totalEnt += pagado;
     fechasConDatos.add(f.fecha);
   });
 
@@ -1555,8 +1716,9 @@ function dibujarGraficas(datosG) {
     datosG.forEach((d) => {
       if (!d.nombre) return;
       if (!porMiembro[d.nombre]) porMiembro[d.nombre] = { pend: 0, ent: 0 };
-      if (d.entregado) porMiembro[d.nombre].ent += d.gasolina;
-      else porMiembro[d.nombre].pend += d.gasolina;
+      const pendiente = Math.max(0, d.gasolina - d.pagado);
+      porMiembro[d.nombre].ent += d.pagado;
+      porMiembro[d.nombre].pend += pendiente;
     });
     const arr = Object.entries(porMiembro)
       .map(([k, v]) => ({ nombre: k, pend: v.pend, ent: v.ent }))
@@ -1809,12 +1971,14 @@ function calcularDesglosePorMiembro(fecha) {
     const gas = gasolinaFila(f);
     porMiembro[f.nombre].rango = f.rango;
 
-    const fechaEntregaNorm = normalizarFecha(f.fechaEntregado);
-    if (f.entregado && fechaEntregaNorm === fechaNorm) {
-      porMiembro[f.nombre].gasEntregadaHoy += gas;
+    const entregadoHoy = totalPagadoHoyFila(f, fechaNorm);
+    if (entregadoHoy > 0) {
+      porMiembro[f.nombre].gasEntregadaHoy += entregadoHoy;
     }
-    if (!f.entregado) {
-      porMiembro[f.nombre].pendienteTotal += gas;
+    const pagadoTotal = totalPagadoFila(f);
+    const pendiente = Math.max(0, gas - pagadoTotal);
+    if (pendiente > 0) {
+      porMiembro[f.nombre].pendienteTotal += pendiente;
     }
   });
   return porMiembro;
@@ -1969,7 +2133,7 @@ function descargarCsv() {
     if (d.gasEntregadaHoy > 0 || d.pendienteTotal > 0) nombresConNovedad.add(nombre);
   });
 
-  let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Entregado;Fecha pago\n';
+  let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Pagado total (L);Pendiente (L);Pagos\n';
   const filasDia = filasDelDia(fecha)
     .filter((f) => nombresConNovedad.has(f.nombre))
     .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
@@ -1979,13 +2143,17 @@ function descargarCsv() {
     const neto = netoFila(f);
     const porc = porcentajeFila(f);
     const gas = gasolinaFila(f);
+    const pagado = totalPagadoFila(f);
+    const pendiente = Math.max(0, gas - pagado);
+    const pagosStr = (f.pagos || []).map((pp) => pp.f + ':' + pp.l).join('|');
     csv += f.fecha + ';' + (f.hora || '') + ';' + f.nombre + ';' + f.rango + ';' +
            formatearNumero(bruto) + ';' + formatearNumero(neto) + ';' +
            formatearNumero(porc) + ';' + formatearNumero(gas) + ';' +
-           (f.entregado ? 'Si' : 'No') + ';' + (f.fechaEntregado || '') + '\n';
+           formatearNumero(pagado) + ';' + formatearNumero(pendiente) + ';' +
+           pagosStr + '\n';
   });
 
-  csv += 'TOTALES;;;;;' + totalCrudo.textContent + ';' + totalNeto.textContent + ';;' + totalGasolina.textContent + ';;\n';
+  csv += 'TOTALES;;;;;' + totalCrudo.textContent + ';' + totalNeto.textContent + ';;' + totalGasolina.textContent + ';;;;\n';
   csv += '\nParametros;Deposito (L);' + formatearNumero(p ? p.deposito : 0) + '\n';
   csv += 'Parametros;Produccion estimada (L);' + formatearNumero(p ? p.produccion : 0) + '\n';
   csv += 'Parametros;Rendimiento (%);' + formatearDecimal(rendimiento) + '\n';
@@ -2023,14 +2191,20 @@ function procesarCsvImportado(event) {
       for (let i = 1; i < lineas.length; i++) {
         const partes = lineas[i].split(';');
         if (partes.length >= 10 && partes[0].match(/^\d{4}-\d{2}-\d{2}$/)) {
-          const [f, h, nom, ran, br, ne, po, ga, en, fe] = partes;
+          const [f, h, nom, ran, br, ne, po, ga, pa, pe, pagosStr] = partes;
           const nuevoId = generarIdUnico();
+          const pagos = [];
+          if (pagosStr && pagosStr.trim() !== '') {
+            pagosStr.split('|').forEach((par) => {
+              const [fechaP, litrosP] = par.split(':');
+              if (fechaP && litrosP) pagos.push({ f: normalizarFecha(fechaP), l: numero(litrosP) });
+            });
+          }
           datos.filas.push({
             id: nuevoId, fecha: f, hora: h, nombre: nom,
             rango: ran || 'Recolector',
             bruto: numero(br),
-            entregado: (en || '').toLowerCase() === 'si',
-            fechaEntregado: (fe || '').trim(),
+            pagos: pagos,
             _gasolinaSheet: numero(ga),
             _netoSheet: numero(ne),
             _porcentajeSheet: numero(po)
@@ -2074,15 +2248,16 @@ function procesarCsvImportado(event) {
 }
 
 function exportarCsvFiltrado() {
-  const lista = obtenerHistorialFiltrado(true);
+  const lista = obtenerHistorialFiltrado();
   if (lista.length === 0) { mostrarNotificacion('No hay datos con esos filtros.', 'error'); return; }
-  let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Beneficio (L);Entregado;Fecha pago\n';
+  let csv = 'Fecha;Hora;Nombre;Rango;Bruto (L);Neto (L);% Rango;Recompensa (L);Pagado (L);Pendiente (L);Beneficio (L);Pagos\n';
   lista.forEach((d) => {
+    const pagosStr = (d.pagos || []).map((pp) => pp.f + ':' + pp.l).join('|');
     csv += d.fecha + ';' + (d.hora || '') + ';' + d.nombre + ';' + d.rango + ';' +
            formatearNumero(d.bruto) + ';' + formatearNumero(d.neto) + ';' +
            formatearNumero(d.porcentaje) + ';' + formatearNumero(d.gasolina) + ';' +
-           formatearNumero(d.beneficio) + ';' +
-           (d.entregado ? 'Si' : 'No') + ';' + (d.fechaEntregado || '') + '\n';
+           formatearNumero(d.pagado) + ';' + formatearNumero(d.pendiente) + ';' +
+           formatearNumero(d.beneficio) + ';' + pagosStr + '\n';
   });
   descargarArchivo(csv, 'historial_swat_' + fechaHoy() + '.csv');
   mostrarNotificacion('CSV exportado.', 'exito');
@@ -2118,12 +2293,6 @@ async function enviarADiscord() {
         if (respCheck.result === 'success') {
           const fechaNorm = normalizarFecha(fecha);
           existeReporte = (respCheck.filas || []).some((f) => normalizarFecha(f.fecha) === fechaNorm);
-          if (!existeReporte) {
-            const localesSincronizadas = datos.filas.filter((f) =>
-              normalizarFecha(f.fecha) === fechaNorm && !filasPendientesSheets[f.id]
-            );
-            existeReporte = localesSincronizadas.length > 0;
-          }
         }
       } catch (e) {
         console.warn('No se pudo verificar reporte previo:', e);
@@ -2201,19 +2370,6 @@ async function enviarReporteFinal(url, nombreReportante, fecha) {
 }
 
 function cambiarVista(id) {
-  if (id !== 'vista-historial' && cambiosPendientes.length > 0) {
-    mostrarConfirmacion({
-      titulo: 'Cambios pendientes',
-      mensaje: '¿Tienes cambios pendientes sin guardar en Reportes?',
-      sub: 'Si sales, se perderan. Continuar?',
-      callback: () => {
-        cambiosPendientes = [];
-        actualizarBarraPendientes();
-        ejecutarCambioVista(id);
-      }
-    });
-    return;
-  }
   ejecutarCambioVista(id);
 }
 
@@ -2503,18 +2659,29 @@ function inicializar() {
   consultar('botonMarcarTodo').addEventListener('click', () => {
     mostrarConfirmacion({
       titulo: 'Marcar todo entregado',
-      mensaje: '¿Marcar todas las filas de hoy como entregadas?',
+      mensaje: '¿Registrar la entrega completa de todas las filas de hoy?',
+      sub: 'Se marcara cada fila con el total pendiente.',
       callback: () => {
         const fecha = fechaHoy();
         datos.filas.forEach((f) => {
           if (f.fecha === fecha) {
-            f.entregado = true;
-            f.fechaEntregado = fecha;
-            marcarFilaPendiente(f.id);
+            const recompensa = gasolinaFila(f);
+            const pagado = totalPagadoFila(f);
+            const pendiente = Math.max(0, recompensa - pagado);
+            if (pendiente > 0) {
+              if (!f.pagos) f.pagos = [];
+              const idx = f.pagos.findIndex((p) => p.f === fecha);
+              if (idx >= 0) f.pagos[idx].l = numero(f.pagos[idx].l) + pendiente;
+              else f.pagos.push({ f: fecha, l: pendiente });
+              f.pagos.sort((a, b) => a.f.localeCompare(b.f));
+              marcarFilaPendiente(f.id);
+            }
           }
         });
         guardarDatos();
         renderDiaActual();
+        actualizarHistorial();
+        actualizarResumen();
         mostrarNotificacion('Filas marcadas como entregadas.', 'exito');
       }
     });
@@ -2560,6 +2727,7 @@ function inicializar() {
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && modalOverlay.classList.contains('activa')) cerrarModal();
+    if (e.key === 'Escape' && modalPago.classList.contains('activa')) cerrarModalPago();
   });
 
   document.querySelectorAll('.boton-pestana').forEach((btn) => {
