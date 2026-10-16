@@ -214,9 +214,17 @@ function parsearPagos(celda) {
 }
 
 function normalizarArrayPagos(a) {
-  return a.filter((p) => p && typeof p === 'object' && p.f && (typeof p.l === 'number' || !isNaN(Number(p.l))))
-    .map((p) => ({ f: normalizarFecha(p.f), l: numero(p.l) }))
-    .filter((p) => p.f && p.l > 0);
+  const mapa = {};
+  const orden = [];
+  a.forEach((p) => {
+    if (!p || typeof p !== 'object' || !p.f) return;
+    const fNorm = normalizarFecha(p.f);
+    const lNorm = numero(p.l);
+    if (!fNorm || lNorm <= 0) return;
+    if (!(fNorm in mapa)) orden.push(fNorm);
+    mapa[fNorm] = lNorm;
+  });
+  return orden.map((f) => ({ f: f, l: mapa[f] }));
 }
 
 function totalPagadoFila(fila) {
@@ -1416,6 +1424,7 @@ function actualizarHistorial() {
     lista.sort((a, b) => (b.fecha + (b.hora || '')).localeCompare(a.fecha + (a.hora || '')));
     lista.forEach((d) => {
       const tr = document.createElement('tr');
+      tr.dataset.id = d.id;
       const estado = estadoPagoFila(d);
       if (estado === 'entregado') tr.classList.add('fila-entregada');
 
@@ -1431,7 +1440,7 @@ function actualizarHistorial() {
         <td class="celda-calculada">${formatearNumero(d.neto)}</td>
         <td class="celda-calculada">${formatearNumero(d.porcentaje)}%</td>
         <td class="celda-calculada">${formatearNumero(d.gasolina)}</td>
-        <td class="${celdaEntregas.clase}">${celdaEntregas.html}</td>
+        <td class="celda-entregas-celda ${celdaEntregas.clase}">${celdaEntregas.html}</td>
         <td class="celda-pagar"></td>
         <td>
           <button class="boton boton-pequeno boton-peligro eliminar-historial" data-id="${d.id}" title="Eliminar">X</button>
@@ -1465,8 +1474,8 @@ function actualizarHistorial() {
         }
         const p2 = pagosPendientes[String(fila.id)];
         tr.classList.toggle('fila-pendiente', !!(p2 && p2.litros > 0));
+        actualizarCeldaEntregasFila(tr, fila);
         actualizarBarraPendientes();
-        actualizarHistorial();
       });
     });
 
@@ -1492,6 +1501,30 @@ function actualizarHistorial() {
   }
 }
 
+function actualizarCeldaEntregasFila(tr, fila) {
+  const tdEntregas = tr.querySelector('.celda-entregas-celda');
+  if (!tdEntregas) return;
+
+  const gas = gasolinaFila(fila);
+  const pagado = totalPagadoVisual(fila);
+  const pendiente = Math.max(0, gas - pagado);
+
+  const dTemp = {
+    id: fila.id,
+    pagos: fila.pagos || [],
+    gasolina: gas,
+    pagado: pagado,
+    pendiente: pendiente
+  };
+  const celdaEntregas = renderCeldaEntregasHistorial(dTemp);
+  tdEntregas.className = 'celda-entregas-celda ' + celdaEntregas.clase;
+  tdEntregas.innerHTML = celdaEntregas.html;
+
+  const estaPendiente = pendiente > 0 && pagado > 0;
+  tr.classList.toggle('fila-pendiente', estaPendiente);
+  tr.classList.toggle('fila-entregada', pendiente <= 0 && gas > 0);
+}
+
 function renderCeldaEntregasHistorial(d) {
   const pagado = d.pagado;
   const pendiente = d.pendiente;
@@ -1501,14 +1534,21 @@ function renderCeldaEntregasHistorial(d) {
   else if (pendiente <= 0) clase += ' entregado';
   else clase += ' parcial';
 
-  const pagosParaMostrar = (d.pagos || []).slice();
+  const mapaPagos = {};
+  (d.pagos || []).forEach((p) => {
+    const fNorm = normalizarFecha(p.f);
+    if (!fNorm) return;
+    mapaPagos[fNorm] = numero(p.l);
+  });
+
   const pend = pagosPendientes[String(d.id)];
   if (pend && pend.litros > 0) {
-    const idx = pagosParaMostrar.findIndex((p) => p.f === pend.fecha);
-    if (idx >= 0) pagosParaMostrar[idx] = { f: pend.fecha, l: pend.litros };
-    else pagosParaMostrar.push({ f: pend.fecha, l: pend.litros });
-    pagosParaMostrar.sort((a, b) => a.f.localeCompare(b.f));
+    const fPend = normalizarFecha(pend.fecha);
+    if (fPend) mapaPagos[fPend] = numero(pend.litros);
   }
+
+  const fechasOrdenadas = Object.keys(mapaPagos).sort();
+  const pagosParaMostrar = fechasOrdenadas.map((f) => ({ f: f, l: mapaPagos[f] }));
 
   if (pagosParaMostrar.length === 0) {
     return { clase, html: '<div class="pagos-resumen">Sin entregas</div>' };
@@ -1566,9 +1606,13 @@ function aplicarCambiosPendientes() {
         const fila = datos.filas.find((f) => String(f.id) === idStr);
         if (!fila) { delete pagosPendientes[idStr]; return; }
         if (!fila.pagos) fila.pagos = [];
-        const idx = fila.pagos.findIndex((x) => x.f === p.fecha);
-        if (idx >= 0) fila.pagos[idx].l = numero(p.litros);
-        else fila.pagos.push({ f: p.fecha, l: numero(p.litros) });
+        const fechaPago = normalizarFecha(p.fecha);
+        const idx = fila.pagos.findIndex((x) => x.f === fechaPago);
+        if (idx >= 0) {
+          fila.pagos[idx].l = numero(p.litros);
+        } else {
+          fila.pagos.push({ f: fechaPago, l: numero(p.litros) });
+        }
         fila.pagos.sort((a, b) => a.f.localeCompare(b.f));
         marcarFilaPendiente(fila.id);
         fechasFilasPendientes.add(fila.fecha);
@@ -2157,14 +2201,17 @@ function descargarCsv() {
     const gas = gasolinaFila(f);
     const pagado = totalPagadoVisual(f);
     const pendiente = Math.max(0, gas - pagado);
-    const pagosParaMostrar = (f.pagos || []).slice();
+    const mapaPagos = {};
+    (f.pagos || []).forEach((x) => {
+      const fNorm = normalizarFecha(x.f);
+      if (fNorm) mapaPagos[fNorm] = numero(x.l);
+    });
     const pend = pagosPendientes[String(f.id)];
     if (pend && pend.litros > 0) {
-      const idx = pagosParaMostrar.findIndex((x) => x.f === pend.fecha);
-      if (idx >= 0) pagosParaMostrar[idx] = { f: pend.fecha, l: pend.litros };
-      else pagosParaMostrar.push({ f: pend.fecha, l: pend.litros });
+      const fPend = normalizarFecha(pend.fecha);
+      if (fPend) mapaPagos[fPend] = numero(pend.litros);
     }
-    const pagosStr = pagosParaMostrar.map((pp) => pp.f + ':' + pp.l).join('|');
+    const pagosStr = Object.keys(mapaPagos).sort().map((k) => k + ':' + mapaPagos[k]).join('|');
     csv += f.fecha + ';' + (f.hora || '') + ';' + f.nombre + ';' + f.rango + ';' +
            formatearNumero(bruto) + ';' + formatearNumero(neto) + ';' +
            formatearNumero(porc) + ';' + formatearNumero(gas) + ';' +
@@ -2224,7 +2271,7 @@ function procesarCsvImportado(event) {
             id: nuevoId, fecha: f, hora: h, nombre: nom,
             rango: ran || 'Recolector',
             bruto: numero(br),
-            pagos: pagos,
+            pagos: normalizarArrayPagos(pagos),
             _gasolinaSheet: numero(ga),
             _netoSheet: numero(ne),
             _porcentajeSheet: numero(po)
