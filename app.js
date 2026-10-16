@@ -1833,7 +1833,6 @@ function generarReporteTexto() {
   });
 
   let texto = 'Registro refinación\n';
-  texto += 'Fecha del reporte: ' + fecha + '\n';
   texto += '========================================\n\n';
   texto += 'PARAMETROS:\n';
   texto += '   Rendimiento: ' + formatearDecimal(rendimiento) + '%\n';
@@ -1894,7 +1893,7 @@ function generarEmbedDiscord(nombreReportante) {
   const detalle = lineas.length > 0 ? lineas.join('\n\n') : 'Sin novedades para reportar.';
 
   const embed = {
-    title: 'Registro refinación · ' + fecha,
+    title: 'Registro refinación',
     color: 0xd0d0d0,
     fields: [
       { name: 'Parametros', value: '> Rendimiento: **' + formatearDecimal(rendimiento) + '%**\n> Perdida: **' + formatearDecimal(perdida) + '%**', inline: false },
