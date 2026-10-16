@@ -583,31 +583,18 @@ function cargarMiembros() {
 
 function actualizarBarraConexion() {
   barraConexion.classList.remove('online', 'offline', 'pendiente');
-  const fechasUnicas = new Set();
-  Object.keys(filasPendientesSheets).forEach((id) => {
-    const fila = datos.filas.find((f) => String(f.id) === String(id));
-    if (fila && fila.fecha) fechasUnicas.add(fila.fecha);
-  });
-  fechasFilasPendientes.forEach((f) => fechasUnicas.add(f));
-  fechasEstadoPendientes.forEach((f) => fechasUnicas.add(f));
-  const pendientes = fechasUnicas.size +
-                     (estadoPendienteSheets ? 1 : 0) +
-                     (miembrosPendientesSheets ? 1 : 0);
 
-  if (conexionEstado === 'online' && pendientes === 0) {
+  if (conexionEstado === 'online') {
     barraConexion.classList.add('online');
     estadoConexion.textContent = 'Conectado';
   } else if (conexionEstado === 'offline') {
     barraConexion.classList.add('offline');
     estadoConexion.textContent = 'Sin conexion';
-  } else if (pendientes > 0 || conexionEstado === 'pendiente') {
-    barraConexion.classList.add('pendiente');
-    estadoConexion.textContent = 'Cambios sin sincronizar';
   } else {
     estadoConexion.textContent = 'Iniciando...';
   }
+
   let detalles = '';
-  if (pendientes > 0) detalles += pendientes + ' sin sincronizar. ';
   if (ultimaSync) {
     const d = new Date(ultimaSync);
     detalles += 'Ultima carga: ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
@@ -1196,6 +1183,9 @@ function crearFilaDom(fila, fecha) {
     tr.classList.toggle('fila-pendiente', !!(p2 && p2.litros > 0));
     recalcularTodo();
     actualizarBarraPendientes();
+    if (document.querySelector('.vista.activa') && document.querySelector('.vista.activa').id === 'vista-historial') {
+      actualizarHistorial();
+    }
   });
 
   inputBruto.addEventListener('input', () => {
@@ -1454,6 +1444,7 @@ function actualizarHistorial() {
         const p2 = pagosPendientes[String(fila.id)];
         tr.classList.toggle('fila-pendiente', !!(p2 && p2.litros > 0));
         actualizarBarraPendientes();
+        actualizarHistorial();
       });
     });
 
@@ -2405,6 +2396,7 @@ function ejecutarCambioVista(id) {
     barraConexion.style.display = 'none';
   } else {
     barraConexion.style.display = 'flex';
+    actualizarBarraConexion();
   }
 
   if (id === 'vista-historial') {
@@ -2777,15 +2769,8 @@ function inicializar() {
   });
 
   setTimeout(() => {
-    const hayPendientes = Object.keys(filasPendientesSheets).length > 0 ||
-                          fechasFilasPendientes.size > 0 ||
-                          fechasEstadoPendientes.size > 0 ||
-                          estadoPendienteSheets ||
-                          miembrosPendientesSheets;
-    if (!hayPendientes) {
-      conexionEstado = 'online';
-      actualizarBarraConexion();
-    }
+    conexionEstado = 'online';
+    actualizarBarraConexion();
   }, 2000);
 
   actualizarBarraPendientes();
