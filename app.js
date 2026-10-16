@@ -581,27 +581,55 @@ function cargarMiembros() {
   if (g) { try { miembros = JSON.parse(g) || []; } catch (e) { miembros = []; } }
 }
 
-function actualizarBarraConexion() {
-  barraConexion.classList.remove('online', 'offline', 'pendiente');
+function limpiarTextosConexion() {
+  if (!barraConexion) return;
+  const walker = document.createTreeWalker(barraConexion, NodeFilter.SHOW_TEXT, null);
+  const nodos = [];
+  let n;
+  while ((n = walker.nextNode())) nodos.push(n);
+  nodos.forEach((nodo) => {
+    const t = (nodo.nodeValue || '').trim();
+    if (t.toLowerCase().includes('cambios sin sincronizar') ||
+        t.toLowerCase().includes('sin sincronizar')) {
+      nodo.nodeValue = '';
+    }
+  });
+}
 
+function actualizarBarraConexion() {
+  if (!barraConexion) return;
+  limpiarTextosConexion();
+
+  barraConexion.classList.remove('online', 'offline', 'pendiente', 'iniciando');
+
+  let texto = 'Iniciando...';
   if (conexionEstado === 'online') {
     barraConexion.classList.add('online');
-    estadoConexion.textContent = 'Conectado';
+    texto = 'Conectado';
   } else if (conexionEstado === 'offline') {
     barraConexion.classList.add('offline');
-    estadoConexion.textContent = 'Sin conexion';
+    texto = 'Sin conexion';
   } else {
-    estadoConexion.textContent = 'Iniciando...';
+    barraConexion.classList.add('iniciando');
+    texto = 'Iniciando...';
   }
 
-  let detalles = '';
-  if (ultimaSync) {
-    const d = new Date(ultimaSync);
-    detalles += 'Ultima carga: ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+  if (estadoConexion) {
+    estadoConexion.textContent = texto;
   } else {
-    detalles += 'Sin cargar todavia';
+    barraConexion.textContent = texto;
   }
-  detallesConexion.textContent = detalles;
+
+  if (detallesConexion) {
+    let detalles = '';
+    if (ultimaSync) {
+      const d = new Date(ultimaSync);
+      detalles += 'Ultima carga: ' + String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    } else {
+      detalles += 'Sin cargar todavia';
+    }
+    detallesConexion.textContent = detalles;
+  }
 }
 
 function marcarFilaPendiente(id) {
@@ -2392,12 +2420,8 @@ function ejecutarCambioVista(id) {
   consultar(id).classList.add('activa');
   document.querySelector('.boton-pestana[data-vista="' + id + '"]').classList.add('activa');
 
-  if (id === 'vista-dia') {
-    barraConexion.style.display = 'none';
-  } else {
-    barraConexion.style.display = 'flex';
-    actualizarBarraConexion();
-  }
+  barraConexion.style.display = 'flex';
+  actualizarBarraConexion();
 
   if (id === 'vista-historial') {
     actualizarHistorial();
@@ -2547,6 +2571,7 @@ function inicializar() {
   textoFechaHoy.textContent = fechaHoyMostrar();
   renderDiaActual();
   actualizarBarraConexion();
+  barraConexion.style.display = 'flex';
 
   const datosGuardados = localStorage.getItem('swat_datos');
   const hayFilasLocales = datos.filas && datos.filas.length > 0;
