@@ -373,6 +373,14 @@ input[type="checkbox"] {
 .margen-inferior { margin-bottom: 16px; }
 
 tr.fila-pendiente td { background: rgba(201, 162, 39, 0.06); }
+tr.fila-pendiente .celda-pagar {
+  outline: 2px solid rgba(201, 162, 39, 0.6);
+  outline-offset: -2px;
+}
+tr.fila-pendiente .celda-entregas {
+  outline: 2px solid rgba(201, 162, 39, 0.6);
+  outline-offset: -2px;
+}
 
 .barra-pendientes {
   display: none; align-items: center; justify-content: space-between;
